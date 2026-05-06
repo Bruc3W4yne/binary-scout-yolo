@@ -16,6 +16,36 @@ _LIB_NAME = "kernel.dll" if sys.platform == "win32" else "kernel.so"
 _LIB_PATH = os.path.join(_HERE, _LIB_NAME)
 
 _lib = None
+_dll_dir_handles = []
+
+
+def _register_windows_dll_dirs() -> None:
+    """Make MinGW/MSYS2 runtime DLLs visible to Python on Windows."""
+    if sys.platform != "win32" or not hasattr(os, "add_dll_directory"):
+        return
+
+    candidates = [_HERE]
+    candidates.extend(os.environ.get("PATH", "").split(os.pathsep))
+    candidates.extend(
+        [
+            r"C:\msys64\ucrt64\bin",
+            r"C:\msys64\mingw64\bin",
+            r"C:\msys64\clang64\bin",
+        ]
+    )
+
+    seen = set()
+    for path in candidates:
+        if not path:
+            continue
+        norm = os.path.normcase(os.path.abspath(path))
+        if norm in seen or not os.path.isdir(path):
+            continue
+        seen.add(norm)
+        try:
+            _dll_dir_handles.append(os.add_dll_directory(path))
+        except OSError:
+            pass
 
 
 def _load():
@@ -25,7 +55,17 @@ def _load():
             raise FileNotFoundError(
                 f"{_LIB_NAME} not found at {_LIB_PATH}. Run `make` first."
             )
-        _lib = ctypes.CDLL(_LIB_PATH)
+        _register_windows_dll_dirs()
+        try:
+            _lib = ctypes.CDLL(_LIB_PATH)
+        except OSError as exc:
+            if sys.platform == "win32":
+                raise OSError(
+                    f"Found {_LIB_NAME} at {_LIB_PATH}, but Windows could not load "
+                    "it or one of its MinGW/MSYS2 runtime dependencies. Make sure "
+                    r"C:\msys64\ucrt64\bin is installed and available, then retry."
+                ) from exc
+            raise
 
         # int xnor_popcount_conv(uint8*, int8*, int32*, int, int, int, int)
         _lib.xnor_popcount_conv.restype = ctypes.c_int
