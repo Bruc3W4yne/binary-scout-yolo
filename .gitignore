@@ -1,0 +1,46 @@
+# ── Dataset & large data files ─────────────────────────────────────────────
+data/
+*.npy
+
+# ── Pretrained model weights (download separately) ─────────────────────────
+*.pt
+*.onnx
+*.pth
+
+# ── Training outputs ────────────────────────────────────────────────────────
+runs/
+
+# ── Compiled C artifacts ────────────────────────────────────────────────────
+src/kernel.so
+src/kernel.dll
+src/kernel_test
+src/kernel_test.exe
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# ── Virtual environment ─────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Claude Code internal ────────────────────────────────────────────────────
+.claude/
+
+# ── Editor / OS ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Jupyter ─────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+CLAUDE.md
