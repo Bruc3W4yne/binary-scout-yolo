@@ -8,7 +8,9 @@ The pipeline goal is:
 UAV image -> binary/XNOR scout tile scores -> top-K tiles -> YOLO on selected crops -> merged detections
 ```
 
-The current repo implements the verified binary core, VisDrone tile dataset generation, C-free scout features, binary-XNOR scout features, and linear scout recall evaluation. YOLO selected-tile inference is the next major layer.
+The current repo implements the verified binary core, VisDrone tile dataset generation, C-free and binary-XNOR scout features, scout recall evaluation, and YOLO selected-tile routing.
+
+See `docs/current_results.md` for the latest Windows RTX 4090 smoke results and caveats.
 
 ## Windows Quickstart
 
