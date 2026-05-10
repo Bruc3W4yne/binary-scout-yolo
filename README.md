@@ -58,6 +58,17 @@ python scripts\verify_tile_features.py --feature-file data\tile_features\binary_
 
 Remove `--max-images` when ready for the full split.
 
+Run detector/router smoke checks:
+
+```powershell
+python scripts\run_yolo_tiles.py --selector full --split val --max-images 2 --device cuda
+python scripts\run_yolo_tiles.py --selector random --top-k 8 --split val --max-images 2 --device cuda
+python scripts\run_yolo_tiles.py --selector oracle --top-k 8 --split val --max-images 2 --device cuda
+python scripts\run_yolo_tiles.py --selector scout --top-k 8 --split val --max-images 2 --device cuda --features data\tile_features\bitplane_stats_val_n25.npz --checkpoint runs\scout_smoke\scout_bitplane_stats.pt
+```
+
+These detector numbers are a pipeline smoke signal, not final VisDrone accuracy: `yolov8n.pt` is COCO-pretrained unless you later fine-tune or replace the weights.
+
 ## Data Contract
 
 Default image contract:
