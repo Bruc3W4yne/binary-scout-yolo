@@ -10,15 +10,13 @@
 # After setup:
 #   source venv/bin/activate
 #   make                       # build the C kernel (requires gcc + libgomp)
-#   python scripts/train_bnn.py --device cuda --epochs 20
+#   python scripts/verify_packed_kernel.py --include-nonbinary
 #
 # Dataset:
 #   Place VisDrone2019-DET-train/ under data/ before training.
 #   Download from: https://github.com/VisDrone/VisDrone-Dataset
 #
-# YOLOv8 weights (needed for benchmark_yolo.py only):
-#   wget https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.pt
-#   wget https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.onnx
+# See README.md for the scout + YOLO pipeline commands.
 
 set -euo pipefail
 
@@ -90,14 +88,9 @@ echo ""
 echo "Next steps:"
 echo "  source venv/bin/activate"
 echo ""
-echo "  # Download dataset (if not already present):"
-echo "  #   https://github.com/VisDrone/VisDrone-Dataset"
-echo "  #   → extract to data/VisDrone2019-DET-train/"
+echo "  python scripts/download_visdrone.py --splits train val"
+echo "  python scripts/make_tile_dataset.py --split-mode official"
+echo "  python scripts/extract_tile_features.py --feature-mode bitplane-stats --split train --max-images 25"
+echo "  python scripts/train_scout.py --epochs 3 --device auto"
 echo ""
-echo "  # (Optional) Download YOLOv8 weights for benchmarking:"
-echo "  wget -q https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.pt"
-echo "  wget -q https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.onnx"
-echo ""
-echo "  # Train:"
-echo "  python scripts/train_bnn.py --device cuda --epochs 20"
-echo "  python scripts/train_bnn.py --device cuda --epochs 20 --max-samples 100  # quick smoke-test"
+echo "See README.md for the full scout + YOLO pipeline commands."

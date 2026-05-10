@@ -20,10 +20,11 @@ Treat these as demos or legacy support, not final project logic:
 
 ```text
 scripts/run_first_layer.py
-scripts/benchmark_kernel.py
-scripts/benchmark_numpy_f32.py
-scripts/pack_data.py
-scripts/sobel_demo.py
+scripts/legacy/benchmark_kernel.py
+scripts/legacy/benchmark_numpy_f32.py
+scripts/legacy/pack_data.py
+scripts/legacy/verify_packing.py
+scripts/legacy/sobel_demo.py
 ```
 
 The next real project layer should be a small scout module that turns binary
@@ -230,7 +231,7 @@ The full detection pipeline is faster or more accurate.
 
 The full pipeline must be benchmarked separately.
 
-## `scripts/pack_data.py`
+## `scripts/legacy/pack_data.py`
 
 This file is easy to misunderstand.
 
@@ -252,7 +253,7 @@ Those are both "bit-packed" layouts, but they are not the same layout.
 For the final scout path, do not use `pack_data.py` as input to
 `BinaryConvLayer`.
 
-## `scripts/benchmark_kernel.py`, `scripts/benchmark_numpy_f32.py`, `scripts/sobel_demo.py`
+## `scripts/legacy/benchmark_kernel.py`, `scripts/legacy/benchmark_numpy_f32.py`, `scripts/legacy/sobel_demo.py`
 
 These are Sobel edge detection demos/benchmarks.
 

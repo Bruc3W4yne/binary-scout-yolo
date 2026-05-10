@@ -15,7 +15,7 @@ For each image in data/VisDrone2019-DET-train/images/:
 Also writes data/packed/index.json: {stem: [orig_width, orig_height]}
 
 Usage:
-    python scripts/pack_data.py
+    python scripts/legacy/pack_data.py
 """
 
 import json

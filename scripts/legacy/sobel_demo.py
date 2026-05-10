@@ -5,7 +5,7 @@ Picks the first image in data/VisDrone2019-DET-train/images/, runs the C
 Sobel kernel, and saves a normalised edge map to data/sobel_demo.png.
 
 Usage:
-    python scripts/sobel_demo.py
+    python scripts/legacy/sobel_demo.py
 """
 
 import sys

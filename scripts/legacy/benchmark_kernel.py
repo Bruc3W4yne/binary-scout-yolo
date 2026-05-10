@@ -5,7 +5,7 @@ Runs the C Sobel kernel on 100 VisDrone images (same sample as benchmark_yolo.py
 and records latency/FPS for a direct head-to-head comparison.
 
 Usage:
-    python scripts/benchmark_kernel.py
+    python scripts/legacy/benchmark_kernel.py
     (requires `make` to produce src/kernel.so)
 """
 

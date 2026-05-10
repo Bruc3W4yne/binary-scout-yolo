@@ -21,20 +21,24 @@ setup.sh
 src/kernel.c
 src/kernel_wrapper.py
 src/binary_layer.py
+src/preprocess.py
+src/scout.py
+src/detector.py
 src/bnn_model.py
 
-scripts/pack_data.py
-scripts/verify_packing.py
 scripts/verify_kernel.py
+scripts/verify_packed_kernel.py
+scripts/verify_tile_contracts.py
+scripts/make_tile_dataset.py
+scripts/extract_tile_features.py
+scripts/train_scout.py
+scripts/evaluate_scout_recall.py
+scripts/run_yolo_tiles.py
 scripts/benchmark_yolo.py
-scripts/benchmark_kernel.py
-scripts/benchmark_numpy_f32.py
 scripts/benchmark_packed.py
 scripts/train_bnn.py
-scripts/make_process_images.py
 scripts/run_first_layer.py
-scripts/run_pipeline.py
-scripts/sobel_demo.py
+scripts/legacy/*
 ```
 
 The project owner has clarified the intended target machine:
@@ -424,11 +428,11 @@ Current YOLO ONNX CPU latency baseline.
 
 It does not provide final detection quality and currently uses CPU ONNX Runtime.
 
-### `scripts/run_pipeline.py`
+### `scripts/legacy/run_pipeline.py`
 
-Current tracked version runs YOLO and Sobel side-by-side. It is not the final pipeline.
+Legacy tracked version runs YOLO and Sobel side-by-side. It is not the final pipeline.
 
-Replace or supersede it with a real scout + YOLO pipeline script.
+The real scout + YOLO routing script is `scripts/run_yolo_tiles.py`.
 
 ---
 

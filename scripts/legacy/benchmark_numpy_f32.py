@@ -7,7 +7,7 @@ via scipy.ndimage.convolve. Same 100-image sample (seed=42) as benchmark_kernel.
 This is the fair comparison: same math, different compute paradigm.
 
 Usage:
-    python scripts/benchmark_numpy_f32.py
+    python scripts/legacy/benchmark_numpy_f32.py
 """
 
 import json

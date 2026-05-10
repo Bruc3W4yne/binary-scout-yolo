@@ -6,7 +6,7 @@ Passes one VisDrone image through both pipelines:
   2. C Sobel kernel → edge map saved to data/pipeline_demo_sobel.png
 
 Usage:
-    python scripts/run_pipeline.py
+    python scripts/legacy/run_pipeline.py
 """
 
 import sys

@@ -6,7 +6,7 @@ RGB image from the 3×8 bit-planes, and asserts pixel-perfect equality
 with the original image.
 
 Usage:
-    python scripts/verify_packing.py
+    python scripts/legacy/verify_packing.py
 """
 
 import json
@@ -83,7 +83,7 @@ def load_original_rgb(stem: str) -> np.ndarray:
 def main() -> None:
     if not PACK_DIR.exists():
         print(f"ERROR: packed dir not found: {PACK_DIR}", file=sys.stderr)
-        print("Run `python scripts/pack_data.py` first.", file=sys.stderr)
+        print("Run `python scripts/legacy/pack_data.py` first.", file=sys.stderr)
         sys.exit(1)
 
     npy_files = sorted(PACK_DIR.glob("*.npy"))

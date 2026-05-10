@@ -9,7 +9,7 @@ Outputs to data/presentation_images/:
   sobel_edge_map.png               — Sobel gradient magnitude (float32 reference)
 
 Usage:
-    python scripts/make_process_images.py [path/to/image.jpg]
+    python scripts/legacy/make_process_images.py [path/to/image.jpg]
     (defaults to first image in data/VisDrone2019-DET-train/images/)
 """
 
