@@ -20,6 +20,28 @@ BITPLANE_STATS_DIM = 30
 BINARY_XNOR_DIM = 64
 
 
+def _rect_means_chw(values: np.ndarray, tiles: list[Tile]) -> np.ndarray:
+    values = np.asarray(values, dtype=np.float32)
+    if values.ndim != 3:
+        raise ValueError(f"values must have shape [C, H, W], got {values.shape}")
+
+    if not tiles:
+        return np.empty((0, values.shape[0]), dtype=np.float32)
+
+    x1 = np.asarray([tile.x1 for tile in tiles], dtype=np.int32)
+    y1 = np.asarray([tile.y1 for tile in tiles], dtype=np.int32)
+    x2 = np.asarray([tile.x2 for tile in tiles], dtype=np.int32)
+    y2 = np.asarray([tile.y2 for tile in tiles], dtype=np.int32)
+    areas = ((x2 - x1) * (y2 - y1)).astype(np.float32)
+    if np.any(areas <= 0):
+        raise ValueError("all tiles must have positive area")
+
+    integral = values.cumsum(axis=1).cumsum(axis=2)
+    integral = np.pad(integral, ((0, 0), (1, 0), (1, 0)))
+    sums = integral[:, y2, x2] - integral[:, y1, x2] - integral[:, y2, x1] + integral[:, y1, x1]
+    return (sums / areas).T.astype(np.float32)
+
+
 def load_resized_rgb(path: Path, img_size: int = 640) -> np.ndarray:
     with Image.open(path) as image:
         image = image.convert("RGB").resize((img_size, img_size), Image.LANCZOS)
@@ -35,15 +57,12 @@ def bitplane_stats_features(rgb: np.ndarray, tiles: list[Tile]) -> np.ndarray:
     rgb_f = rgb.astype(np.float32) / 255.0
     features = np.empty((len(tiles), BITPLANE_STATS_DIM), dtype=np.float32)
 
-    for idx, tile in enumerate(tiles):
-        bit_patch = planes[:, tile.y1:tile.y2, tile.x1:tile.x2]
-        rgb_patch = rgb_f[tile.y1:tile.y2, tile.x1:tile.x2, :]
-        if bit_patch.size == 0 or rgb_patch.size == 0:
-            raise ValueError(f"empty tile patch: {tile.xyxy()}")
-
-        features[idx, :24] = bit_patch.mean(axis=(1, 2))
-        features[idx, 24:27] = rgb_patch.mean(axis=(0, 1))
-        features[idx, 27:30] = rgb_patch.std(axis=(0, 1))
+    rgb_chw = rgb_f.transpose(2, 0, 1)
+    rgb_means = _rect_means_chw(rgb_chw, tiles)
+    rgb_sq_means = _rect_means_chw(rgb_chw * rgb_chw, tiles)
+    features[:, :24] = _rect_means_chw(planes, tiles)
+    features[:, 24:27] = rgb_means
+    features[:, 27:30] = np.sqrt(np.maximum(rgb_sq_means - rgb_means * rgb_means, 0.0))
 
     return features
 
@@ -69,12 +88,4 @@ def binary_xnor_features(
         seed=seed,
     )
     binary_maps = layer.apply_threshold(layer.forward(planes), threshold=threshold).astype(np.float32)
-    features = np.empty((len(tiles), n_filters), dtype=np.float32)
-
-    for idx, tile in enumerate(tiles):
-        patch = binary_maps[:, tile.y1:tile.y2, tile.x1:tile.x2]
-        if patch.size == 0:
-            raise ValueError(f"empty tile patch: {tile.xyxy()}")
-        features[idx] = patch.mean(axis=(1, 2))
-
-    return features
+    return _rect_means_chw(binary_maps, tiles)

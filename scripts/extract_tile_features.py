@@ -1,8 +1,9 @@
 """
 Extract scout features for a tile JSONL split.
 
-Current feature mode:
+Feature modes:
   bitplane-stats -> 30 float32 features per tile
+  binary-xnor    -> C-kernel binary convolution summaries per tile
 """
 
 from __future__ import annotations
@@ -63,6 +64,7 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
     groups = grouped_by_stem(records)
     if args.max_images:
         groups = OrderedDict(list(groups.items())[:args.max_images])
+    total_images = len(groups)
 
     features = []
     labels = []
@@ -72,7 +74,7 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
     n_boxes = []
     box_indices_json = []
 
-    for stem, image_records in groups.items():
+    for image_idx, (stem, image_records) in enumerate(groups.items(), start=1):
         image_records = sorted(image_records, key=lambda item: item["tile_id"])
         rgb = load_resized_rgb(resolve_path(image_records[0]["image_path"]), img_size=args.img_size)
         tiles = [tile_from_record(record) for record in image_records]
@@ -95,6 +97,8 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
         n_objects.extend(int(record["n_objects"]) for record in image_records)
         n_boxes.extend(int(record["n_boxes"]) for record in image_records)
         box_indices_json.extend(json.dumps(record["box_indices"]) for record in image_records)
+        if args.progress_every and (image_idx == total_images or image_idx % args.progress_every == 0):
+            print(f"progress {image_idx}/{total_images} images", file=sys.stderr, flush=True)
 
     if not features:
         raise ValueError("no features extracted; input JSONL is empty")
@@ -110,6 +114,12 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
     }
 
 
+def output_path(args: argparse.Namespace) -> Path:
+    mode = args.feature_mode.replace("-", "_")
+    limit = f"_n{args.max_images}" if args.max_images else ""
+    return args.out_dir / f"{mode}_{args.split}{limit}.npz"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tile-dir", type=Path, default=ROOT / "data" / "tile_dataset")
@@ -121,6 +131,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--binary-filters", type=int, default=BINARY_XNOR_DIM)
     parser.add_argument("--binary-kernel-size", type=int, default=3)
     parser.add_argument("--binary-threshold", type=int, default=0)
+    parser.add_argument("--compress", action="store_true", help="write a smaller but slower compressed NPZ")
+    parser.add_argument("--progress-every", type=int, default=500, help="print progress every N images; 0 disables it")
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -138,13 +150,15 @@ def main() -> int:
             "split": args.split,
             "img_size": args.img_size,
             "n_tiles": int(arrays["features"].shape[0]),
+            "max_images": int(args.max_images),
             "requires_c_kernel": args.feature_mode == "binary-xnor",
         }
         arrays["metadata_json"] = np.asarray(json.dumps(metadata))
 
         args.out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = args.out_dir / f"{args.feature_mode.replace('-', '_')}_{args.split}.npz"
-        np.savez_compressed(out_path, **arrays)
+        out_path = output_path(args)
+        save = np.savez_compressed if args.compress else np.savez
+        save(out_path, **arrays)
 
     except Exception as exc:
         print(f"FAIL: {exc}", file=sys.stderr)

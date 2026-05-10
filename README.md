@@ -47,11 +47,13 @@ python scripts\evaluate_scout_recall.py --mode scout --top-k-values 4 8 12 16 20
 python scripts\evaluate_scout_recall.py --mode random --top-k-values 4 8 12 16 20
 ```
 
+For a quick smoke run, add `--max-images 25`; limited outputs are written with an `_n25` suffix so they cannot be mistaken for full-split caches.
+
 Extract binary-XNOR scout features:
 
 ```powershell
 python scripts\extract_tile_features.py --feature-mode binary-xnor --split val --max-images 25
-python scripts\verify_tile_features.py --feature-file data\tile_features\binary_xnor_val.npz --expect-feature-dim 64 --expect-feature-mode binary-xnor
+python scripts\verify_tile_features.py --feature-file data\tile_features\binary_xnor_val_n25.npz --expect-feature-dim 64 --expect-feature-mode binary-xnor
 ```
 
 Remove `--max-images` when ready for the full split.
