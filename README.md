@@ -19,6 +19,7 @@ $env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
 mingw32-make
 python scripts\verify_packed_kernel.py --include-nonbinary
 python scripts\verify_tile_contracts.py
+python scripts\verify_detector_utils.py
 ```
 
 Download VisDrone DET train/val:
