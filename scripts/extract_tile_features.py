@@ -19,7 +19,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from preprocess import Tile  # noqa: E402
-from scout import BITPLANE_STATS_DIM, bitplane_stats_features, load_resized_rgb  # noqa: E402
+from scout import (  # noqa: E402
+    BINARY_XNOR_DIM,
+    BITPLANE_STATS_DIM,
+    binary_xnor_features,
+    bitplane_stats_features,
+    load_resized_rgb,
+)
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -53,10 +59,10 @@ def grouped_by_stem(records: list[dict]) -> OrderedDict[str, list[dict]]:
     return groups
 
 
-def extract_bitplane_stats(records: list[dict], img_size: int, max_images: int) -> dict[str, np.ndarray]:
+def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str, np.ndarray]:
     groups = grouped_by_stem(records)
-    if max_images:
-        groups = OrderedDict(list(groups.items())[:max_images])
+    if args.max_images:
+        groups = OrderedDict(list(groups.items())[:args.max_images])
 
     features = []
     labels = []
@@ -68,9 +74,19 @@ def extract_bitplane_stats(records: list[dict], img_size: int, max_images: int) 
 
     for stem, image_records in groups.items():
         image_records = sorted(image_records, key=lambda item: item["tile_id"])
-        rgb = load_resized_rgb(resolve_path(image_records[0]["image_path"]), img_size=img_size)
+        rgb = load_resized_rgb(resolve_path(image_records[0]["image_path"]), img_size=args.img_size)
         tiles = [tile_from_record(record) for record in image_records]
-        image_features = bitplane_stats_features(rgb, tiles)
+        if args.feature_mode == "bitplane-stats":
+            image_features = bitplane_stats_features(rgb, tiles)
+        else:
+            image_features = binary_xnor_features(
+                rgb,
+                tiles,
+                n_filters=args.binary_filters,
+                kernel_size=args.binary_kernel_size,
+                threshold=args.binary_threshold,
+                seed=args.seed,
+            )
 
         features.append(image_features)
         labels.extend(int(record["label"]) for record in image_records)
@@ -98,10 +114,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tile-dir", type=Path, default=ROOT / "data" / "tile_dataset")
     parser.add_argument("--out-dir", type=Path, default=ROOT / "data" / "tile_features")
-    parser.add_argument("--feature-mode", choices=["bitplane-stats"], default="bitplane-stats")
+    parser.add_argument("--feature-mode", choices=["bitplane-stats", "binary-xnor"], default="bitplane-stats")
     parser.add_argument("--split", choices=["train", "val"], required=True)
     parser.add_argument("--img-size", type=int, default=640)
     parser.add_argument("--max-images", type=int, default=0)
+    parser.add_argument("--binary-filters", type=int, default=BINARY_XNOR_DIM)
+    parser.add_argument("--binary-kernel-size", type=int, default=3)
+    parser.add_argument("--binary-threshold", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
 
@@ -109,14 +129,16 @@ def main() -> int:
     args = parse_args()
     try:
         records = read_jsonl(args.tile_dir / f"{args.split}_tiles.jsonl")
-        arrays = extract_bitplane_stats(records, img_size=args.img_size, max_images=args.max_images)
+        arrays = extract_features(records, args)
+        feature_dim = BITPLANE_STATS_DIM if args.feature_mode == "bitplane-stats" else args.binary_filters
 
         metadata = {
             "feature_mode": args.feature_mode,
-            "feature_dim": BITPLANE_STATS_DIM,
+            "feature_dim": feature_dim,
             "split": args.split,
             "img_size": args.img_size,
             "n_tiles": int(arrays["features"].shape[0]),
+            "requires_c_kernel": args.feature_mode == "binary-xnor",
         }
         arrays["metadata_json"] = np.asarray(json.dumps(metadata))
 
