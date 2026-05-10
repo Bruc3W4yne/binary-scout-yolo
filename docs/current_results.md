@@ -4,6 +4,8 @@ Generated on the Windows RTX 4090 machine during the first end-to-end implementa
 
 These are not final paper-quality numbers. They are pipeline validation numbers that show the project is runnable and where the next optimization work should focus.
 
+For the exact commands verified in the final handoff pass, see `docs/completion_audit.md`.
+
 ## Artifacts Verified
 
 | Artifact | Result |

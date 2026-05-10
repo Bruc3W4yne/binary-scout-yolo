@@ -10,6 +10,17 @@ This document tracks the current clean project repository:
 
 Do not use omitted planning documents, local PDFs, slide decks, untracked files, previous drafts, or generated artifacts as project truth.
 
+For exact current commands and verified status, use:
+
+```text
+README.md
+docs/current_results.md
+docs/research_framing.md
+docs/completion_audit.md
+```
+
+This `PROD.md` is still the long-form design contract. Some lower roadmap sections preserve earlier proposed script names and should be treated as design history if they conflict with the current README or completion audit.
+
 The current tracked repository contains:
 
 ```text

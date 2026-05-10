@@ -10,7 +10,7 @@ UAV image -> binary/XNOR scout tile scores -> top-K tiles -> YOLO on selected cr
 
 The current repo implements the verified binary core, VisDrone tile dataset generation, C-free and binary-XNOR scout features, scout recall evaluation, and YOLO selected-tile routing.
 
-See `docs/current_results.md` for the latest Windows RTX 4090 smoke results and caveats. See `docs/research_framing.md` for the defensible novelty/claim framing.
+See `docs/current_results.md` for the latest Windows RTX 4090 smoke results and caveats. See `docs/research_framing.md` for the defensible novelty/claim framing, and `docs/completion_audit.md` for the current phase-gate handoff.
 
 ## Windows Quickstart
 
