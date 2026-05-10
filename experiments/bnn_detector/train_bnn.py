@@ -3,7 +3,7 @@ train_bnn.py — Train the BNN backbone + YOLOv8 detection head on VisDrone.
 
 Usage
 -----
-    python3 scripts/train_bnn.py [--epochs N] [--batch B] [--lr LR] [--device cpu|cuda]
+    python3 experiments/bnn_detector/train_bnn.py [--epochs N] [--batch B] [--lr LR] [--device cpu|cuda]
 
 What this does
 --------------
@@ -28,6 +28,7 @@ Label format fed to the loss
 """
 
 import argparse
+import sys
 import time
 from pathlib import Path
 
@@ -37,13 +38,12 @@ import torch.nn.functional as F
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bnn_model import BNNDetector
 
 from ultralytics.utils.loss import v8DetectionLoss
 
-ROOT    = Path(__file__).resolve().parent.parent
 IMG_DIR = ROOT / "data" / "VisDrone2019-DET-train" / "images"
 ANN_DIR = ROOT / "data" / "VisDrone2019-DET-train" / "annotations"
 RUN_DIR = ROOT / "runs" / "bnn_train"

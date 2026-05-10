@@ -24,7 +24,7 @@ src/binary_layer.py
 src/preprocess.py
 src/scout.py
 src/detector.py
-src/bnn_model.py
+experiments/bnn_detector/bnn_model.py
 
 scripts/verify_kernel.py
 scripts/verify_packed_kernel.py
@@ -36,7 +36,7 @@ scripts/evaluate_scout_recall.py
 scripts/run_yolo_tiles.py
 scripts/benchmark_yolo.py
 scripts/benchmark_packed.py
-scripts/train_bnn.py
+experiments/bnn_detector/train_bnn.py
 scripts/run_first_layer.py
 scripts/legacy/*
 ```
@@ -115,7 +115,7 @@ New detector architecture research
 
 YOLO fine-tuning on VisDrone is allowed, and is preferred if time permits and class-aware metrics are required. It should be treated as evaluation support for the final pipeline, not as the project novelty.
 
-`src/bnn_model.py` and `scripts/train_bnn.py` are optional experimental extensions. They are not the primary success path.
+`experiments/bnn_detector/bnn_model.py` and `experiments/bnn_detector/train_bnn.py` are optional experimental extensions. They are not the primary success path.
 
 ---
 
@@ -404,13 +404,13 @@ Then threshold to [n_filters,H,W] uint8 binary feature maps
 
 Use this in the final binary scout.
 
-### `src/bnn_model.py`
+### `experiments/bnn_detector/bnn_model.py`
 
 Experimental full BNN detector.
 
 Do not prioritize this until the scout + YOLO pipeline is complete.
 
-### `scripts/train_bnn.py`
+### `experiments/bnn_detector/train_bnn.py`
 
 Experimental full BNN training script.
 
@@ -495,7 +495,7 @@ data/VisDrone2019-DET-train
 
 ## 6.2 VisDrone annotation parsing
 
-Use the same interpretation as `scripts/train_bnn.py`.
+Use the same interpretation as `src/preprocess.py`.
 
 Each line:
 
