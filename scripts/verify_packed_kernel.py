@@ -19,8 +19,7 @@ Before running, build the native C library:
     Linux/WSL2:           make
 
 The optional --include-nonbinary check verifies that input planes with values
-0 and 255 behave like 0 and 1. That check is expected to fail until
-pack_channels_to_u64 clamps each input value to one bit.
+0 and 255 behave like 0 and 1.
 """
 
 from __future__ import annotations
@@ -36,6 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from binary_layer import BinaryConvLayer  # noqa: E402
+import kernel_wrapper as kw  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -163,14 +163,69 @@ def run_threshold_case() -> None:
         raise AssertionError("threshold_i32_to_u8 does not match NumPy thresholding")
 
 
+def expect_raises(name: str, exc_type: type[Exception], fn, *args) -> None:
+    try:
+        fn(*args)
+    except exc_type:
+        return
+    except Exception as exc:
+        raise AssertionError(
+            f"{name}: expected {exc_type.__name__}, got {type(exc).__name__}"
+        ) from exc
+    raise AssertionError(f"{name}: expected {exc_type.__name__}")
+
+
+def run_shape_guard_case() -> None:
+    layer = BinaryConvLayer(n_filters=2, n_ch=3, kH=3, kW=3, seed=99)
+
+    expect_raises(
+        "BinaryConvLayer rejects zero channels",
+        ValueError,
+        BinaryConvLayer,
+        2, 0, 3, 3,
+    )
+    expect_raises(
+        "pack_input rejects 2D arrays",
+        ValueError,
+        layer.pack_input,
+        np.zeros((3, 4), dtype=np.uint8),
+    )
+    expect_raises(
+        "forward rejects channel mismatch",
+        ValueError,
+        layer.forward,
+        np.zeros((2, 4, 4), dtype=np.uint8),
+    )
+    expect_raises(
+        "set_filter rejects out-of-range index",
+        IndexError,
+        layer.set_filter,
+        2,
+        np.ones((3, 3, 3), dtype=np.int8),
+    )
+    expect_raises(
+        "apply_threshold rejects 2D scores",
+        ValueError,
+        layer.apply_threshold,
+        np.zeros((2, 4), dtype=np.int32),
+    )
+    expect_raises(
+        "wrapper rejects mismatched packed filter shape",
+        ValueError,
+        kw.xnor_multi_filter_conv,
+        np.zeros((4, 4), dtype=np.uint64),
+        np.zeros((2, 3, 2), dtype=np.uint64),
+        3, 3, 3, 2,
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--include-nonbinary",
         action="store_true",
         help=(
-            "Also check 0/255 planes. This is expected to fail until "
-            "pack_channels_to_u64 clamps inputs to one bit."
+            "Also check that 0/255 planes behave like 0/1 planes."
         ),
     )
     return parser.parse_args()
@@ -190,6 +245,9 @@ def main() -> int:
 
         run_threshold_case()
         print("PASS  threshold_i32_to_u8")
+
+        run_shape_guard_case()
+        print("PASS  shape_guard_errors")
 
         if args.include_nonbinary:
             print()

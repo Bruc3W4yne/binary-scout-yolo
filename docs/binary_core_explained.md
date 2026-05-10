@@ -130,8 +130,8 @@ xnor_multi_filter_conv
   This is the most important final-path C function.
 
 pack_channels_to_u64
-  Packs [channels, H, W] binary planes into [H, W] uint64.
-  Important, but currently needs a small correctness fix.
+  Packs [channels, H, W] uint8 planes into [H, W] uint64.
+  Any nonzero plane value is treated as bit 1.
 
 threshold_i32_to_u8
   Thresholds int32 feature maps into uint8 binary maps.
@@ -150,14 +150,15 @@ It loads the compiled C library and exposes Python functions for the C kernels.
 This file is required for the final binary/XNOR claim because it proves Python
 is calling native C code.
 
-Current concern:
+Current guardrail:
 
 ```text
-It does not validate shapes strictly enough before passing raw pointers to C.
+The wrapper validates array dimensionality and expected shapes before passing
+raw pointers to C.
 ```
 
-That means a bad Python call could make C read the wrong memory. The wrapper
-should raise clear Python errors before calling C.
+Bad Python calls should raise clear Python errors instead of reaching the C
+layer with mismatched buffers.
 
 ## `src/binary_layer.py`
 

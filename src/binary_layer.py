@@ -22,6 +22,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kernel_wrapper as kw
 
 
+def _positive_int(name: str, value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+        raise TypeError(f"{name} must be an integer, got {type(value).__name__}")
+    value = int(value)
+    if value < 1:
+        raise ValueError(f"{name} must be >= 1, got {value}")
+    return value
+
+
 class BinaryConvLayer:
     """
     XNOR-Popcount convolution layer with configurable ±1 weights.
@@ -35,6 +44,10 @@ class BinaryConvLayer:
     """
 
     def __init__(self, n_filters: int, n_ch: int, kH: int, kW: int, seed: int = 42):
+        n_filters = _positive_int("n_filters", n_filters)
+        n_ch = _positive_int("n_ch", n_ch)
+        kH = _positive_int("kH", kH)
+        kW = _positive_int("kW", kW)
         if n_ch > 64:
             raise ValueError(f"n_ch={n_ch} exceeds uint64 capacity of 64")
         if kH % 2 == 0 or kW % 2 == 0:
@@ -80,6 +93,11 @@ class BinaryConvLayer:
         filter_idx : which filter to update (0-indexed)
         weights    : [n_ch, kH, kW] int8, values ±1
         """
+        if isinstance(filter_idx, bool) or not isinstance(filter_idx, (int, np.integer)):
+            raise TypeError(f"filter_idx must be an integer, got {type(filter_idx).__name__}")
+        filter_idx = int(filter_idx)
+        if not 0 <= filter_idx < self.n_filters:
+            raise IndexError(f"filter_idx must be in [0, {self.n_filters}), got {filter_idx}")
         weights = np.asarray(weights, dtype=np.int8)
         expected = (self.n_ch, self.kH, self.kW)
         if weights.shape != expected:
@@ -94,18 +112,22 @@ class BinaryConvLayer:
 
     def pack_input(self, planes: np.ndarray) -> np.ndarray:
         """
-        Pack [n_ch, H, W] binary (0/1) into [H, W] uint64.
+        Pack [n_ch, H, W] uint8 planes into [H, W] uint64.
 
         Bit i of each uint64 = channel i's activation at that pixel position.
+        Any nonzero input value is treated as bit 1.
 
         Parameters
         ----------
-        planes : [n_ch, H, W] uint8, values 0 or 1
+        planes : [n_ch, H, W] uint8, usually values 0 or 1
 
         Returns
         -------
         packed : [H, W] uint64
         """
+        planes = np.asarray(planes)
+        if planes.ndim != 3:
+            raise ValueError(f"Expected [n_ch, H, W] input, got shape {planes.shape}")
         if planes.shape[0] != self.n_ch:
             raise ValueError(f"Expected {self.n_ch} channels, got {planes.shape[0]}")
         # Delegate to C: auto-vectorised loop under -O3 -march=native.
@@ -148,6 +170,9 @@ class BinaryConvLayer:
                  Range: [-n_ch*kH*kW, +n_ch*kH*kW]
                  Larger positive score = stronger match to that filter pattern.
         """
+        planes = np.asarray(planes)
+        if planes.ndim != 3:
+            raise ValueError(f"Expected [n_ch, H, W] input, got shape {planes.shape}")
         if planes.shape[0] != self.n_ch:
             raise ValueError(f"Expected {self.n_ch} input channels, got {planes.shape[0]}")
 
@@ -175,6 +200,11 @@ class BinaryConvLayer:
         binary : [n_filters, H, W] uint8, values 0 or 1
                  Ready to be packed into uint64 for the next layer.
         """
+        scores = np.asarray(scores)
+        if scores.ndim != 3:
+            raise ValueError(f"Expected [n_filters, H, W] scores, got shape {scores.shape}")
+        if scores.shape[0] != self.n_filters:
+            raise ValueError(f"Expected {self.n_filters} score maps, got {scores.shape[0]}")
         # Delegate to C: avoids creating the large boolean intermediate array
         # that numpy's comparison operator would allocate.
         return kw.threshold_i32_to_u8(scores, threshold)

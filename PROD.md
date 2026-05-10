@@ -269,13 +269,13 @@ stride = 80
 For `640x640`, tile starts are:
 
 ```text
-0, 80, 160, 240, 320, 400
+0, 80, 160, 240, 320, 400, 480
 ```
 
 This creates:
 
 ```text
-6 x 6 = 36 candidate tiles per image
+7 x 7 = 49 candidate tiles per image
 ```
 
 Default smoke-test tile budget:
@@ -613,8 +613,8 @@ include only full tiles inside 640x640
 For default grid:
 
 ```text
-starts = [0, 80, 160, 240, 320, 400]
-n_tiles = 36
+starts = [0, 80, 160, 240, 320, 400, 480]
+n_tiles = 49
 ```
 
 ## 6.6 Tile-positive contract
@@ -865,7 +865,7 @@ This is expensive but useful for final comparison.
 Default:
 
 ```text
-Run YOLO on all 36 tiles for a limited validation subset if full run is too slow.
+Run YOLO on all 49 tiles for a limited validation subset if full run is too slow.
 ```
 
 ---

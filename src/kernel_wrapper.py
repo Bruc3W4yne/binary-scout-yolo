@@ -1,22 +1,74 @@
 """
-kernel_wrapper.py — ctypes bridge to src/kernel.so
+ctypes bridge for the user-space XNOR/popcount C library.
 
-Exposes:
-    xnor_popcount_conv(input_u8, weights_i8, rows, cols, kH, kW) -> np.ndarray int32
-    sobel_conv(input_u8, rows, cols) -> np.ndarray float32
+This module owns the Python-to-C safety boundary: arrays are made contiguous,
+shapes are checked, and only then are raw pointers passed to src/kernel.c.
 """
 
 import ctypes
 import os
 import sys
+from typing import Optional
+
 import numpy as np
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _LIB_NAME = "kernel.dll" if sys.platform == "win32" else "kernel.so"
 _LIB_PATH = os.path.join(_HERE, _LIB_NAME)
+_C_INT_MAX = 2_147_483_647
 
 _lib = None
 _dll_dir_handles = []
+
+
+def _require_int(name: str, value: int, min_value: int = 1, max_value: Optional[int] = None) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+        raise TypeError(f"{name} must be an integer, got {type(value).__name__}")
+    value = int(value)
+    if value < min_value:
+        raise ValueError(f"{name} must be >= {min_value}, got {value}")
+    if max_value is not None and value > max_value:
+        raise ValueError(f"{name} must be <= {max_value}, got {value}")
+    return value
+
+
+def _require_kernel(kH: int, kW: int) -> tuple[int, int]:
+    kH = _require_int("kH", kH, max_value=_C_INT_MAX)
+    kW = _require_int("kW", kW, max_value=_C_INT_MAX)
+    if kH % 2 == 0 or kW % 2 == 0:
+        raise ValueError("kH and kW must be odd")
+    _require_c_int_product("kH*kW", kH, kW)
+    return kH, kW
+
+
+def _require_channels(n_ch: int, max_channels: int) -> int:
+    return _require_int("n_ch", n_ch, max_value=max_channels)
+
+
+def _as_c_array(name: str, array: np.ndarray, dtype: np.dtype, ndim: int) -> np.ndarray:
+    array = np.ascontiguousarray(array, dtype=dtype)
+    if array.ndim != ndim:
+        raise ValueError(f"{name} must be {ndim}D, got shape {array.shape}")
+    if any(dim < 1 for dim in array.shape):
+        raise ValueError(f"{name} dimensions must be positive, got shape {array.shape}")
+    for i, dim in enumerate(array.shape):
+        _require_int(f"{name}.shape[{i}]", dim, max_value=_C_INT_MAX)
+    return array
+
+
+def _require_shape(name: str, array: np.ndarray, expected: tuple[int, ...]) -> None:
+    if array.shape != expected:
+        raise ValueError(f"{name} must have shape {expected}, got {array.shape}")
+
+
+def _require_c_int_product(name: str, *values: int) -> int:
+    total = 1
+    for value in values:
+        value = _require_int(name, value, max_value=_C_INT_MAX)
+        total *= value
+        if total > _C_INT_MAX:
+            raise ValueError(f"{name} exceeds C int range: {total}")
+    return total
 
 
 def _register_windows_dll_dirs() -> None:
@@ -181,11 +233,14 @@ def xnor_popcount_conv(
     output : (rows, cols) int32
     """
     lib = _load()
+    kH, kW = _require_kernel(kH, kW)
 
-    input_arr = np.ascontiguousarray(input_arr, dtype=np.uint8)
-    weights_arr = np.ascontiguousarray(weights_arr, dtype=np.int8)
+    input_arr = _as_c_array("input_arr", input_arr, np.uint8, ndim=2)
+    weights_arr = _as_c_array("weights_arr", weights_arr, np.int8, ndim=2)
+    _require_shape("weights_arr", weights_arr, (kH, kW))
 
     rows, cols = input_arr.shape
+    _require_c_int_product("rows*cols", rows, cols)
     output = np.empty((rows, cols), dtype=np.int32)
 
     rc = lib.xnor_popcount_conv(
@@ -210,9 +265,13 @@ def xnor_packed_u8_conv(
 ) -> np.ndarray:
     """XNOR-Popcount convolution, channels packed in uint8 (n_ch ≤ 8)."""
     lib = _load()
-    input_arr   = np.ascontiguousarray(input_arr,   dtype=np.uint8)
-    weights_arr = np.ascontiguousarray(weights_arr, dtype=np.uint8)
+    kH, kW = _require_kernel(kH, kW)
+    n_ch = _require_channels(n_ch, 8)
+    input_arr   = _as_c_array("input_arr", input_arr, np.uint8, ndim=2)
+    weights_arr = _as_c_array("weights_arr", weights_arr, np.uint8, ndim=2)
+    _require_shape("weights_arr", weights_arr, (kH, kW))
     rows, cols  = input_arr.shape
+    _require_c_int_product("rows*cols", rows, cols)
     output      = np.empty((rows, cols), dtype=np.int32)
     rc = lib.xnor_packed_u8_conv(
         input_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
@@ -229,18 +288,23 @@ def xnor_packed_u8_conv(
 
 def pack_channels_to_u64(planes: np.ndarray, n_ch: int) -> np.ndarray:
     """
-    Pack [n_ch, H, W] binary (0/1) uint8 into [H, W] uint64.
+    Pack [n_ch, H, W] uint8 planes into [H, W] uint64.
+    Any nonzero input value is treated as bit 1.
     Bit i = planes[i] at each pixel. Vectorised in C with -O3.
     """
     lib = _load()
-    planes = np.ascontiguousarray(planes, dtype=np.uint8)
+    n_ch = _require_channels(n_ch, 64)
+    planes = _as_c_array("planes", planes, np.uint8, ndim=3)
+    if planes.shape[0] != n_ch:
+        raise ValueError(f"planes first dimension must equal n_ch={n_ch}, got {planes.shape[0]}")
     _, H, W = planes.shape
+    npix = _require_c_int_product("H*W", H, W)
     output = np.empty((H, W), dtype=np.uint64)
     rc = lib.pack_channels_to_u64(
         planes.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
         output.ctypes.data_as(ctypes.POINTER(ctypes.c_uint64)),
         ctypes.c_int(n_ch),
-        ctypes.c_int(H * W),
+        ctypes.c_int(npix),
     )
     if rc != 0:
         raise ValueError(f"pack_channels_to_u64 returned {rc}")
@@ -253,9 +317,10 @@ def threshold_i32_to_u8(scores: np.ndarray, threshold: int = 0) -> np.ndarray:
     Vectorised in C with -O3 (avoids large numpy temporaries).
     """
     lib = _load()
-    scores = np.ascontiguousarray(scores, dtype=np.int32)
+    threshold = _require_int("threshold", threshold, min_value=-_C_INT_MAX - 1, max_value=_C_INT_MAX)
+    scores = _as_c_array("scores", scores, np.int32, ndim=3)
     n = scores.shape[0]
-    npix = scores.shape[1] * scores.shape[2]
+    npix = _require_c_int_product("H*W", scores.shape[1], scores.shape[2])
     output = np.empty_like(scores, dtype=np.uint8)
     rc = lib.threshold_i32_to_u8(
         scores.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
@@ -292,9 +357,14 @@ def xnor_multi_filter_conv(
     output : (n_filters, rows, cols) int32
     """
     lib = _load()
-    input_arr   = np.ascontiguousarray(input_arr,   dtype=np.uint64)
-    weights_arr = np.ascontiguousarray(weights_arr, dtype=np.uint64)
+    kH, kW = _require_kernel(kH, kW)
+    n_ch = _require_channels(n_ch, 64)
+    n_filters = _require_int("n_filters", n_filters, max_value=_C_INT_MAX)
+    input_arr   = _as_c_array("input_arr", input_arr, np.uint64, ndim=2)
+    weights_arr = _as_c_array("weights_arr", weights_arr, np.uint64, ndim=3)
+    _require_shape("weights_arr", weights_arr, (n_filters, kH, kW))
     rows, cols  = input_arr.shape
+    _require_c_int_product("rows*cols", rows, cols)
     output      = np.empty((n_filters, rows, cols), dtype=np.int32)
     rc = lib.xnor_multi_filter_conv(
         input_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_uint64)),
@@ -317,9 +387,13 @@ def xnor_packed_u64_conv(
 ) -> np.ndarray:
     """XNOR-Popcount convolution, channels packed in uint64 (n_ch ≤ 64)."""
     lib = _load()
-    input_arr   = np.ascontiguousarray(input_arr,   dtype=np.uint64)
-    weights_arr = np.ascontiguousarray(weights_arr, dtype=np.uint64)
+    kH, kW = _require_kernel(kH, kW)
+    n_ch = _require_channels(n_ch, 64)
+    input_arr   = _as_c_array("input_arr", input_arr, np.uint64, ndim=2)
+    weights_arr = _as_c_array("weights_arr", weights_arr, np.uint64, ndim=2)
+    _require_shape("weights_arr", weights_arr, (kH, kW))
     rows, cols  = input_arr.shape
+    _require_c_int_product("rows*cols", rows, cols)
     output      = np.empty((rows, cols), dtype=np.int32)
     rc = lib.xnor_packed_u64_conv(
         input_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_uint64)),
@@ -342,9 +416,13 @@ def float32_conv_nch_u8(
 ) -> np.ndarray:
     """Float32 reference convolution from packed uint8 input (n_ch ≤ 8)."""
     lib = _load()
-    input_arr   = np.ascontiguousarray(input_arr,   dtype=np.uint8)
-    weights_arr = np.ascontiguousarray(weights_arr, dtype=np.float32)
+    kH, kW = _require_kernel(kH, kW)
+    n_ch = _require_channels(n_ch, 8)
+    input_arr   = _as_c_array("input_arr", input_arr, np.uint8, ndim=2)
+    weights_arr = _as_c_array("weights_arr", weights_arr, np.float32, ndim=3)
+    _require_shape("weights_arr", weights_arr, (n_ch, kH, kW))
     rows, cols  = input_arr.shape
+    _require_c_int_product("rows*cols", rows, cols)
     output      = np.empty((rows, cols), dtype=np.float32)
     rc = lib.float32_conv_nch_u8(
         input_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
@@ -367,9 +445,13 @@ def float32_conv_nch_u64(
 ) -> np.ndarray:
     """Float32 reference convolution from packed uint64 input (n_ch ≤ 64)."""
     lib = _load()
-    input_arr   = np.ascontiguousarray(input_arr,   dtype=np.uint64)
-    weights_arr = np.ascontiguousarray(weights_arr, dtype=np.float32)
+    kH, kW = _require_kernel(kH, kW)
+    n_ch = _require_channels(n_ch, 64)
+    input_arr   = _as_c_array("input_arr", input_arr, np.uint64, ndim=2)
+    weights_arr = _as_c_array("weights_arr", weights_arr, np.float32, ndim=3)
+    _require_shape("weights_arr", weights_arr, (n_ch, kH, kW))
     rows, cols  = input_arr.shape
+    _require_c_int_product("rows*cols", rows, cols)
     output      = np.empty((rows, cols), dtype=np.float32)
     rc = lib.float32_conv_nch_u64(
         input_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_uint64)),
@@ -398,8 +480,9 @@ def sobel_conv(input_arr: np.ndarray) -> np.ndarray:
     """
     lib = _load()
 
-    input_arr = np.ascontiguousarray(input_arr, dtype=np.uint8)
+    input_arr = _as_c_array("input_arr", input_arr, np.uint8, ndim=2)
     rows, cols = input_arr.shape
+    _require_c_int_product("rows*cols", rows, cols)
     output = np.empty((rows, cols), dtype=np.float32)
 
     rc = lib.sobel_conv(
