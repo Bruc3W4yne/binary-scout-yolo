@@ -44,12 +44,25 @@ def parse_box_indices(raw: str) -> list[int]:
     return [int(value) for value in json.loads(str(raw))]
 
 
+def feature_stems(feature_data: dict[str, np.ndarray]) -> np.ndarray:
+    if "stems" in feature_data:
+        return feature_data["stems"].astype(str)
+    return feature_data["image_stems"].astype(str)[feature_data["image_ids"].astype(np.int64)]
+
+
+def tile_box_indices(feature_data: dict[str, np.ndarray], idx: int) -> list[int]:
+    if "box_indices_json" in feature_data:
+        return parse_box_indices(feature_data["box_indices_json"][idx])
+    offsets = feature_data["box_offsets"].astype(np.int64)
+    flat = feature_data["box_indices"].astype(np.int64)
+    return [int(value) for value in flat[offsets[idx] : offsets[idx + 1]]]
+
+
 def evaluate_topk(feature_data: dict[str, np.ndarray], scores: np.ndarray, top_k_values: list[int]) -> dict:
     groups = defaultdict(list)
-    stems = feature_data["stems"].astype(str)
+    stems = feature_stems(feature_data)
     tile_ids = feature_data["tile_ids"].astype(np.int32)
     n_boxes = feature_data["n_boxes"].astype(np.int32)
-    box_indices_json = feature_data["box_indices_json"].astype(str)
 
     for idx, stem in enumerate(stems):
         groups[stem].append(idx)
@@ -73,10 +86,10 @@ def evaluate_topk(feature_data: dict[str, np.ndarray], scores: np.ndarray, top_k
             selected_positives = 0
 
             for idx in indices:
-                if parse_box_indices(box_indices_json[idx]):
+                if tile_box_indices(feature_data, idx):
                     positives += 1
             for idx in selected:
-                box_indices = parse_box_indices(box_indices_json[idx])
+                box_indices = tile_box_indices(feature_data, idx)
                 if box_indices:
                     selected_positives += 1
                 covered.update(box_indices)

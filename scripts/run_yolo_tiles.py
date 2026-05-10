@@ -105,7 +105,10 @@ def load_scout_scores(feature_path: Path, checkpoint_path: Path) -> dict[tuple[s
     with torch.no_grad():
         scores = model((features - mean) / std).squeeze(1).numpy()
 
-    stems = data["stems"].astype(str)
+    if "stems" in data.files:
+        stems = data["stems"].astype(str)
+    else:
+        stems = data["image_stems"].astype(str)[data["image_ids"].astype(np.int64)]
     tile_ids = data["tile_ids"].astype(np.int32)
     return {
         (str(stem), int(tile_id)): float(score)

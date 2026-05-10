@@ -65,14 +65,16 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
     if args.max_images:
         groups = OrderedDict(list(groups.items())[:args.max_images])
     total_images = len(groups)
+    stem_to_id = {stem: idx for idx, stem in enumerate(groups)}
 
     features = []
     labels = []
-    stems = []
+    image_ids = []
     tile_ids = []
     n_objects = []
     n_boxes = []
-    box_indices_json = []
+    box_indices = []
+    box_offsets = [0]
 
     for image_idx, (stem, image_records) in enumerate(groups.items(), start=1):
         image_records = sorted(image_records, key=lambda item: item["tile_id"])
@@ -91,12 +93,15 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
             )
 
         features.append(image_features)
-        labels.extend(int(record["label"]) for record in image_records)
-        stems.extend(stem for _ in image_records)
-        tile_ids.extend(int(record["tile_id"]) for record in image_records)
-        n_objects.extend(int(record["n_objects"]) for record in image_records)
-        n_boxes.extend(int(record["n_boxes"]) for record in image_records)
-        box_indices_json.extend(json.dumps(record["box_indices"]) for record in image_records)
+        for record in image_records:
+            indices = [int(value) for value in record["box_indices"]]
+            labels.append(int(record["label"]))
+            image_ids.append(stem_to_id[stem])
+            tile_ids.append(int(record["tile_id"]))
+            n_objects.append(int(record["n_objects"]))
+            n_boxes.append(int(record["n_boxes"]))
+            box_indices.extend(indices)
+            box_offsets.append(len(box_indices))
         if args.progress_every and (image_idx == total_images or image_idx % args.progress_every == 0):
             print(f"progress {image_idx}/{total_images} images", file=sys.stderr, flush=True)
 
@@ -106,11 +111,13 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
     return {
         "features": np.vstack(features).astype(np.float32),
         "labels": np.asarray(labels, dtype=np.uint8),
-        "stems": np.asarray(stems),
-        "tile_ids": np.asarray(tile_ids, dtype=np.int32),
-        "n_objects": np.asarray(n_objects, dtype=np.int16),
-        "n_boxes": np.asarray(n_boxes, dtype=np.int16),
-        "box_indices_json": np.asarray(box_indices_json),
+        "image_ids": np.asarray(image_ids, dtype=np.uint32),
+        "image_stems": np.asarray(list(groups.keys())),
+        "tile_ids": np.asarray(tile_ids, dtype=np.uint8),
+        "n_objects": np.asarray(n_objects, dtype=np.uint16),
+        "n_boxes": np.asarray(n_boxes, dtype=np.uint16),
+        "box_offsets": np.asarray(box_offsets, dtype=np.uint32),
+        "box_indices": np.asarray(box_indices, dtype=np.uint16),
     }
 
 
@@ -147,9 +154,11 @@ def main() -> int:
         metadata = {
             "feature_mode": args.feature_mode,
             "feature_dim": feature_dim,
+            "schema_version": 2,
             "split": args.split,
             "img_size": args.img_size,
             "n_tiles": int(arrays["features"].shape[0]),
+            "n_images": int(len(arrays["image_stems"])),
             "max_images": int(args.max_images),
             "requires_c_kernel": args.feature_mode == "binary-xnor",
         }
