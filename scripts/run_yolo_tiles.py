@@ -29,7 +29,7 @@ from preprocess import (  # noqa: E402
     scale_boxes_to_resized,
     selected_area_fraction,
 )
-from scout import load_resized_rgb  # noqa: E402
+from scout import bitplane_stats_features, load_resized_rgb  # noqa: E402
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -93,17 +93,26 @@ def detections_from_result(result, source_tile_id: int | None) -> list[Detection
     ]
 
 
-def load_scout_scores(feature_path: Path, checkpoint_path: Path) -> dict[tuple[str, int], float]:
-    data = np.load(feature_path)
+def load_scout_checkpoint(checkpoint_path: Path) -> dict:
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    features = torch.from_numpy(data["features"].astype(np.float32))
-    mean = checkpoint["mean"].float()
-    std = checkpoint["std"].float()
     model = torch.nn.Linear(int(checkpoint["feature_dim"]), 1)
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()
+    checkpoint["model"] = model
+    return checkpoint
+
+
+def score_features(features: np.ndarray, checkpoint: dict) -> np.ndarray:
+    features_t = torch.from_numpy(features.astype(np.float32))
+    mean = checkpoint["mean"].float()
+    std = checkpoint["std"].float()
     with torch.no_grad():
-        scores = model((features - mean) / std).squeeze(1).numpy()
+        return checkpoint["model"]((features_t - mean) / std).squeeze(1).numpy()
+
+
+def load_scout_scores(feature_path: Path, checkpoint_path: Path) -> dict[tuple[str, int], float]:
+    data = np.load(feature_path)
+    scores = score_features(data["features"], load_scout_checkpoint(checkpoint_path))
 
     if "stems" in data.files:
         stems = data["stems"].astype(str)
@@ -113,6 +122,16 @@ def load_scout_scores(feature_path: Path, checkpoint_path: Path) -> dict[tuple[s
     return {
         (str(stem), int(tile_id)): float(score)
         for stem, tile_id, score in zip(stems, tile_ids, scores)
+    }
+
+
+def live_bitplane_scores(rgb: np.ndarray, records: list[dict], checkpoint: dict) -> dict[tuple[str, int], float]:
+    tiles = [tile_from_record(record) for record in sorted(records, key=lambda item: int(item["tile_id"]))]
+    scores = score_features(bitplane_stats_features(rgb, tiles), checkpoint)
+    stem = records[0]["stem"]
+    return {
+        (stem, tile.tile_id): float(score)
+        for tile, score in zip(tiles, scores)
     }
 
 
@@ -138,9 +157,9 @@ def select_tile_records(
             key=lambda item: (-int(item["n_objects"]), -int(item["label"]), int(item["tile_id"])),
         )
         return sorted(ranked[: args.top_k], key=lambda item: int(item["tile_id"]))
-    if args.selector == "scout":
+    if args.selector in {"scout", "scout-live"}:
         if scout_scores is None:
-            raise ValueError("--selector scout requires --features and --checkpoint")
+            raise ValueError(f"--selector {args.selector} requires scout scores")
         missing = [
             int(record["tile_id"])
             for record in records
@@ -175,12 +194,13 @@ def predict_tiles(
     selected_records: list[dict],
     args: argparse.Namespace,
     device,
-) -> tuple[list[Detection], list[Tile]]:
+) -> tuple[list[Detection], list[Tile], float, float]:
     tiles = [tile_from_record(record) for record in selected_records]
     if not tiles:
-        return [], []
+        return [], [], 0.0, 0.0
 
     crops = [rgb[tile.y1 : tile.y2, tile.x1 : tile.x2, :] for tile in tiles]
+    yolo_started = time.perf_counter()
     results = model.predict(
         crops,
         imgsz=args.detector_imgsz,
@@ -190,14 +210,18 @@ def predict_tiles(
         verbose=False,
         batch=args.batch,
     )
+    yolo_ms = (time.perf_counter() - yolo_started) * 1000.0
 
+    merge_started = time.perf_counter()
     detections: list[Detection] = []
     for tile, result in zip(tiles, results):
         for det in detections_from_result(result, source_tile_id=tile.tile_id):
             shifted = offset_detection(det, tile, args.img_size)
             if shifted is not None:
                 detections.append(shifted)
-    return nms(detections, iou_threshold=args.merge_iou), tiles
+    merged = nms(detections, iou_threshold=args.merge_iou)
+    merge_ms = (time.perf_counter() - merge_started) * 1000.0
+    return merged, tiles, yolo_ms, merge_ms
 
 
 def load_ground_truth(first_record: dict, img_size: int):
@@ -207,19 +231,31 @@ def load_ground_truth(first_record: dict, img_size: int):
 
 
 def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespace, device, rng, scout_scores):
-    first = records[0]
     started = time.perf_counter()
+    first = records[0]
     rgb = load_resized_rgb(resolve_path(first["image_path"]), img_size=args.img_size)
     boxes = load_ground_truth(first, args.img_size)
+    load_ms = (time.perf_counter() - started) * 1000.0
+    scout_ms = 0.0
+    merge_ms = 0.0
 
     if args.selector == "full":
         selected_records: list[dict] = []
         selected_tiles: list[Tile] = []
-        detections = nms(predict_full(model, rgb, args, device), iou_threshold=args.merge_iou)
+        yolo_started = time.perf_counter()
+        detections = predict_full(model, rgb, args, device)
+        yolo_ms = (time.perf_counter() - yolo_started) * 1000.0
+        merge_started = time.perf_counter()
+        detections = nms(detections, iou_threshold=args.merge_iou)
+        merge_ms = (time.perf_counter() - merge_started) * 1000.0
         area_fraction = 1.0
     else:
+        if args.selector == "scout-live":
+            scout_started = time.perf_counter()
+            scout_scores = live_bitplane_scores(rgb, records, args.scout_checkpoint)
+            scout_ms = (time.perf_counter() - scout_started) * 1000.0
         selected_records = select_tile_records(stem, records, args, rng, scout_scores)
-        detections, selected_tiles = predict_tiles(model, rgb, selected_records, args, device)
+        detections, selected_tiles, yolo_ms, merge_ms = predict_tiles(model, rgb, selected_records, args, device)
         area_fraction = selected_area_fraction(selected_tiles, img_size=args.img_size)
 
     latency_ms = (time.perf_counter() - started) * 1000.0
@@ -233,6 +269,10 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
         "selected_area_fraction": area_fraction,
         "detections": len(detections),
         "latency_ms": latency_ms,
+        "load_ms": load_ms,
+        "scout_ms": scout_ms,
+        "yolo_ms": yolo_ms,
+        "merge_ms": merge_ms,
         **recall,
     }
     if args.save_detections:
@@ -270,6 +310,10 @@ def summarize(rows: list[dict], args: argparse.Namespace) -> dict:
             "min": min(latencies) if latencies else 0.0,
             "max": max(latencies) if latencies else 0.0,
         },
+        "phase_ms": {
+            name: float(np.mean([row[name] for row in rows])) if rows else 0.0
+            for name in ["load_ms", "scout_ms", "yolo_ms", "merge_ms"]
+        },
     }
 
 
@@ -277,7 +321,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tile-dir", type=Path, default=ROOT / "data" / "tile_dataset")
     parser.add_argument("--split", choices=["train", "val"], default="val")
-    parser.add_argument("--selector", choices=["full", "all", "random", "oracle", "scout"], default="full")
+    parser.add_argument("--selector", choices=["full", "all", "random", "oracle", "scout", "scout-live"], default="full")
     parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--max-images", type=int, default=5, help="0 means all images")
     parser.add_argument("--weights", default="yolov8n.pt")
@@ -312,6 +356,10 @@ def main() -> int:
             if args.features is None or args.checkpoint is None:
                 raise ValueError("--selector scout requires --features and --checkpoint")
             scout_scores = load_scout_scores(args.features, args.checkpoint)
+        if args.selector == "scout-live":
+            if args.checkpoint is None:
+                raise ValueError("--selector scout-live requires --checkpoint")
+            args.scout_checkpoint = load_scout_checkpoint(args.checkpoint)
 
         model = YOLO(args.weights)
         device = yolo_device_arg(args.device)

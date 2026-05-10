@@ -63,6 +63,7 @@ class BinaryConvLayer:
         rng = np.random.default_rng(seed)
         raw = rng.integers(0, 2, size=(n_filters, n_ch, kH, kW), dtype=np.int8)
         self.weights = np.where(raw == 0, np.int8(-1), np.int8(1))
+        self._weights_packed = None
 
     # ------------------------------------------------------------------
     # Weight management
@@ -83,6 +84,7 @@ class BinaryConvLayer:
         if not np.all((weights == 1) | (weights == -1)):
             raise ValueError("All weight values must be +1 or -1")
         self.weights = weights.copy()
+        self._weights_packed = None
 
     def set_filter(self, filter_idx: int, weights: np.ndarray) -> None:
         """
@@ -105,6 +107,7 @@ class BinaryConvLayer:
         if not np.all((weights == 1) | (weights == -1)):
             raise ValueError("All weight values must be +1 or -1")
         self.weights[filter_idx] = weights
+        self._weights_packed = None
 
     # ------------------------------------------------------------------
     # Packing helpers (binary → uint64)
@@ -143,11 +146,11 @@ class BinaryConvLayer:
         -------
         packed : [n_filters, kH, kW] uint64
         """
-        # weights: [n_filters, n_ch, kH, kW] with values ±1
-        # Convert to 0/1 bits then reduce over the channel axis.
-        bits   = (self.weights > 0).astype(np.uint64)                   # [n_filters, n_ch, kH, kW]
-        shifts = np.arange(self.n_ch, dtype=np.uint64).reshape(1, -1, 1, 1)  # [1, n_ch, 1, 1]
-        return np.bitwise_or.reduce(bits << shifts, axis=1)             # [n_filters, kH, kW]
+        if self._weights_packed is None:
+            bits = (self.weights > 0).astype(np.uint64)
+            shifts = np.arange(self.n_ch, dtype=np.uint64).reshape(1, -1, 1, 1)
+            self._weights_packed = np.bitwise_or.reduce(bits << shifts, axis=1)
+        return self._weights_packed
 
     # ------------------------------------------------------------------
     # Forward pass

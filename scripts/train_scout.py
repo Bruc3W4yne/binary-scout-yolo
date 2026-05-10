@@ -45,6 +45,10 @@ def evaluate(model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor) -> dict:
     return {"loss": float(loss.item()), "accuracy": float(acc.item())}
 
 
+def artifact_stem(feature_mode: str) -> str:
+    return feature_mode.replace("-", "_").replace("/", "_")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train-features", type=Path, default=ROOT / "data" / "tile_features" / "bitplane_stats_train.npz")
@@ -120,7 +124,8 @@ def main() -> int:
             )
 
         args.out_dir.mkdir(parents=True, exist_ok=True)
-        checkpoint_path = args.out_dir / "scout_bitplane_stats.pt"
+        model_name = artifact_stem(str(metadata.get("feature_mode", args.model)))
+        checkpoint_path = args.out_dir / f"scout_{model_name}.pt"
         log_path = args.out_dir / "train_log.json"
         torch.save(
             {
