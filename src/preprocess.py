@@ -8,10 +8,12 @@ shapes the scout, router, and detector pipeline will agree on.
 from __future__ import annotations
 
 import json
+import random
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
+import numpy as np
 from PIL import Image
 
 VALID_VISDRONE_CATEGORY_IDS = set(range(1, 11))
@@ -214,6 +216,53 @@ def label_tiles(tiles: Iterable[Tile], boxes: list[Box]) -> list[dict]:
             }
         )
     return labels
+
+
+def rgb_to_bitplanes(rgb: np.ndarray) -> np.ndarray:
+    rgb = np.asarray(rgb, dtype=np.uint8)
+    if rgb.ndim != 3 or rgb.shape[2] != 3:
+        raise ValueError(f"rgb must have shape [H, W, 3], got {rgb.shape}")
+
+    planes = [
+        ((rgb[:, :, channel] >> bit) & 1).astype(np.uint8)
+        for channel in range(3)
+        for bit in range(8)
+    ]
+    return np.stack(planes, axis=0)
+
+
+def selected_area_fraction(tiles: Iterable[Tile], img_size: int = 640) -> float:
+    if img_size < 1:
+        raise ValueError(f"img_size must be positive, got {img_size}")
+
+    mask = np.zeros((img_size, img_size), dtype=np.bool_)
+    for tile in tiles:
+        if not (0 <= tile.x1 < tile.x2 <= img_size and 0 <= tile.y1 < tile.y2 <= img_size):
+            raise ValueError(f"tile is outside image bounds: {tile.xyxy()}")
+        mask[tile.y1:tile.y2, tile.x1:tile.x2] = True
+    return float(mask.mean())
+
+
+def deterministic_split(
+    stems: Iterable[str],
+    val_frac: float = 0.2,
+    seed: int = 42,
+) -> tuple[list[str], list[str]]:
+    stems = sorted(stems)
+    if not stems:
+        return [], []
+    if not 0.0 <= val_frac < 1.0:
+        raise ValueError(f"val_frac must be in [0, 1), got {val_frac}")
+
+    shuffled = stems[:]
+    random.Random(seed).shuffle(shuffled)
+    n_val = int(round(len(shuffled) * val_frac))
+    if val_frac > 0.0 and len(shuffled) > 1:
+        n_val = min(len(shuffled) - 1, max(1, n_val))
+
+    val = set(shuffled[:n_val])
+    train = [stem for stem in stems if stem not in val]
+    return train, sorted(val)
 
 
 def write_json(path: Path, payload: dict) -> None:
