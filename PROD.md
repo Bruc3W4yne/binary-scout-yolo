@@ -2,10 +2,10 @@
 
 ## 0. Source of truth
 
-This document is based only on the git-tracked repository context provided for:
+This document tracks the current clean project repository:
 
 ```text
-/Users/bruc3w4yne/binary-piece-of-shit
+/Users/bruc3w4yne/binary-scout-yolo
 ```
 
 Do not use omitted planning documents, local PDFs, slide decks, untracked files, previous drafts, or generated artifacts as project truth.
