@@ -487,7 +487,7 @@ KERNEL_EXPORT int pack_channels_to_u64(
         const uint8_t *src = planes + (size_t)ch * (size_t)npix;
         uint64_t shift = (uint64_t)ch;
         for (int i = 0; i < npix; i++)
-            output[i] |= (uint64_t)src[i] << shift;
+            output[i] |= ((uint64_t)(src[i] != 0)) << shift;
     }
     return 0;
 }
