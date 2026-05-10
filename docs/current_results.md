@@ -26,12 +26,13 @@ Object-center recall on the full VisDrone val tile labels:
 |---|---:|---:|---:|---:|---:|
 | Random | 0.249 | 0.447 | 0.598 | 0.721 | 0.809 |
 | Bitplane stats scout | 0.199 | 0.362 | 0.514 | 0.642 | 0.746 |
-| Spatial bitplane scout | 0.320 | 0.492 | 0.601 | 0.695 | 0.773 |
+| Spatial bitplane linear scout | 0.320 | 0.492 | 0.601 | 0.695 | 0.773 |
+| Spatial bitplane MLP scout | 0.364 | 0.516 | 0.635 | 0.735 | 0.806 |
 | Oracle | 0.606 | 0.763 | 0.852 | 0.909 | 0.948 |
 
 Interpretation:
 
-The first bitplane-only linear scout was worse than random. Adding cheap spatial tile features made the scout useful at tight tile budgets, especially K=4 and K=8. There is still large headroom to the oracle upper bound.
+The first bitplane-only linear scout was worse than random. Adding cheap spatial tile features made the scout useful at tight tile budgets, especially K=4 and K=8. A tiny 64-hidden-unit MLP improves coverage further while staying lightweight. There is still large headroom to the oracle upper bound.
 
 ## YOLO Routing Smoke Results
 
@@ -42,18 +43,18 @@ Class-agnostic recall against VisDrone boxes with COCO-pretrained `yolov8n.pt`.
 | Full-image YOLO | 25 | 0 | 1.000 | 0.102 | 28.2 ms |
 | Random K=8 | 25 | 8 | 0.406 | 0.098 | 39.2 ms |
 | Oracle K=8 | 25 | 8 | 0.265 | 0.162 | 41.8 ms |
-| Spatial scout K=8, cached scores | 25 | 8 | 0.284 | 0.144 | 39.7 ms |
-| Spatial scout K=8, live scores | 25 | 8 | 0.284 | 0.144 | 185.2 ms |
+| Spatial MLP scout K=8, cached scores | 25 | 8 | 0.284 | 0.145 | 41.3 ms |
+| Spatial MLP scout K=8, live scores | 25 | 8 | 0.284 | 0.145 | 174.1 ms |
 | All tiles | 10 | 49 | 1.000 | 0.228 | 156.2 ms |
 
-Live spatial scout phase timing on the 25-image smoke run:
+Live spatial MLP scout phase timing on the 25-image smoke run:
 
 | Phase | Mean |
 |---|---:|
-| Image load / resize / labels | 21.7 ms |
-| Scout feature + score | 142.4 ms |
-| YOLO selected tiles | 31.6 ms |
-| Merge | 0.4 ms |
+| Image load / resize / labels | 11.0 ms |
+| Scout feature + score | 130.8 ms |
+| YOLO selected tiles | 31.0 ms |
+| Merge | 1.0 ms |
 
 ## What This Supports
 
@@ -66,7 +67,7 @@ VisDrone image -> tile labels -> scout features -> top-K tiles -> YOLO on select
 The best current claim is narrow and defensible:
 
 ```text
-On an initial smoke benchmark, a cheap spatial scout selected higher-value tiles than random at K=8 and approached the oracle direction while using only 8 of 49 tiles.
+On initial smoke benchmarks, a cheap spatial MLP scout selected higher-value tiles than random at K=8 and approached the oracle direction while using only 8 of 49 tiles.
 ```
 
 ## What Not To Claim Yet

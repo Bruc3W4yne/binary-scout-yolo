@@ -71,6 +71,16 @@ def yolo_device_arg(device: str):
     return 0 if device == "cuda" else "cpu"
 
 
+def build_scout_model(feature_dim: int, hidden_dim: int) -> torch.nn.Module:
+    if hidden_dim <= 0:
+        return torch.nn.Linear(feature_dim, 1)
+    return torch.nn.Sequential(
+        torch.nn.Linear(feature_dim, hidden_dim),
+        torch.nn.ReLU(),
+        torch.nn.Linear(hidden_dim, 1),
+    )
+
+
 def detections_from_result(result, source_tile_id: int | None) -> list[Detection]:
     boxes = result.boxes
     if boxes is None or len(boxes) == 0:
@@ -95,7 +105,7 @@ def detections_from_result(result, source_tile_id: int | None) -> list[Detection
 
 def load_scout_checkpoint(checkpoint_path: Path) -> dict:
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    model = torch.nn.Linear(int(checkpoint["feature_dim"]), 1)
+    model = build_scout_model(int(checkpoint["feature_dim"]), int(checkpoint.get("hidden_dim", 0)))
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()
     checkpoint["model"] = model

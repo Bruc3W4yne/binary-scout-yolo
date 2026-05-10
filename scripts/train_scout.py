@@ -49,6 +49,16 @@ def artifact_stem(feature_mode: str) -> str:
     return feature_mode.replace("-", "_").replace("/", "_")
 
 
+def build_model(feature_dim: int, hidden_dim: int) -> torch.nn.Module:
+    if hidden_dim <= 0:
+        return torch.nn.Linear(feature_dim, 1)
+    return torch.nn.Sequential(
+        torch.nn.Linear(feature_dim, hidden_dim),
+        torch.nn.ReLU(),
+        torch.nn.Linear(hidden_dim, 1),
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train-features", type=Path, default=ROOT / "data" / "tile_features" / "bitplane_stats_train.npz")
@@ -57,6 +67,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default="bitplane-stats")
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch", type=int, default=1024)
+    parser.add_argument("--hidden-dim", type=int, default=0, help="0 uses a linear scout")
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
@@ -86,7 +97,7 @@ def main() -> int:
         )
         train_loader = DataLoader(train_ds, batch_size=args.batch, shuffle=True)
 
-        model = torch.nn.Linear(x_train.shape[1], 1).to(device)
+        model = build_model(x_train.shape[1], args.hidden_dim).to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
         positives = float(y_train.sum())
         negatives = float(len(y_train) - positives)
@@ -131,6 +142,7 @@ def main() -> int:
             {
                 "feature_mode": metadata.get("feature_mode", args.model),
                 "feature_dim": int(x_train.shape[1]),
+                "hidden_dim": int(args.hidden_dim),
                 "mean": torch.from_numpy(mean.astype(np.float32)),
                 "std": torch.from_numpy(std.astype(np.float32)),
                 "state_dict": model.cpu().state_dict(),

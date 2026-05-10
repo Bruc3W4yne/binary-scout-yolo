@@ -23,12 +23,22 @@ def load_feature_file(path: Path) -> dict[str, np.ndarray]:
     return {key: data[key] for key in data.files}
 
 
+def build_model(feature_dim: int, hidden_dim: int) -> torch.nn.Module:
+    if hidden_dim <= 0:
+        return torch.nn.Linear(feature_dim, 1)
+    return torch.nn.Sequential(
+        torch.nn.Linear(feature_dim, hidden_dim),
+        torch.nn.ReLU(),
+        torch.nn.Linear(hidden_dim, 1),
+    )
+
+
 def load_scout_scores(feature_data: dict[str, np.ndarray], checkpoint_path: Path) -> np.ndarray:
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
     features = torch.from_numpy(feature_data["features"].astype(np.float32))
     mean = checkpoint["mean"].float()
     std = checkpoint["std"].float()
-    model = torch.nn.Linear(int(checkpoint["feature_dim"]), 1)
+    model = build_model(int(checkpoint["feature_dim"]), int(checkpoint.get("hidden_dim", 0)))
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()
     with torch.no_grad():
