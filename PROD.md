@@ -26,7 +26,7 @@ src/scout.py
 src/detector.py
 experiments/bnn_detector/bnn_model.py
 
-scripts/verify_kernel.py
+scripts/legacy/verify_kernel.py
 scripts/verify_packed_kernel.py
 scripts/verify_tile_contracts.py
 scripts/make_tile_dataset.py
@@ -34,10 +34,10 @@ scripts/extract_tile_features.py
 scripts/train_scout.py
 scripts/evaluate_scout_recall.py
 scripts/run_yolo_tiles.py
-scripts/benchmark_yolo.py
+scripts/legacy/benchmark_yolo.py
 scripts/benchmark_packed.py
 experiments/bnn_detector/train_bnn.py
-scripts/run_first_layer.py
+scripts/legacy/run_first_layer.py
 scripts/legacy/*
 ```
 
@@ -422,7 +422,7 @@ Important low-level benchmark.
 
 Use it to support claims about packed XNOR-popcount vs float32 reference on equivalent convolution work.
 
-### `scripts/benchmark_yolo.py`
+### `scripts/legacy/benchmark_yolo.py`
 
 Current YOLO ONNX CPU latency baseline.
 
@@ -1316,7 +1316,7 @@ scripts/extract_tile_features.py
 scripts/train_scout.py
 scripts/evaluate_scout_recall.py
 scripts/evaluate_scout_yolo.py
-scripts/verify_binary_layer.py
+scripts/verify_packed_kernel.py
 ```
 
 Optional:
@@ -1667,32 +1667,29 @@ Native Windows verification:
 
 ```powershell
 make
-python scripts\verify_kernel.py
-python scripts\verify_binary_layer.py
+python scripts\verify_packed_kernel.py --include-nonbinary
 ```
 
 WSL2 verification:
 
 ```bash
 make
-python scripts/verify_kernel.py
-python scripts/verify_binary_layer.py
+python scripts/verify_packed_kernel.py --include-nonbinary
 ```
 
 Add:
 
 ```text
-scripts/verify_binary_layer.py
+scripts/verify_packed_kernel.py
 ```
 
-This script must compare `BinaryConvLayer.forward()` against a slow NumPy reference and compare thresholding against NumPy.
+This script compares `BinaryConvLayer.forward()` against NumPy references and verifies thresholding, shape guards, and nonbinary 0/255 plane handling.
 
 Done when:
 
 ```text
 src/kernel.dll or src/kernel.so exists
-verify_kernel.py passes
-verify_binary_layer.py passes
+verify_packed_kernel.py --include-nonbinary passes
 ```
 
 ---
@@ -1998,7 +1995,7 @@ Medium
 Files touched:
 
 ```text
-scripts/verify_binary_layer.py
+scripts/verify_packed_kernel.py
 ```
 
 Expected output:
@@ -2011,7 +2008,7 @@ threshold_i32_to_u8 wrapper matches NumPy thresholding.
 Verification:
 
 ```powershell
-python scripts\verify_binary_layer.py
+python scripts\verify_packed_kernel.py
 ```
 
 Risk:
@@ -2437,8 +2434,7 @@ C. C kernel is not working yet, but exact next setup step is known.
 If A or B is working, also show:
 
 ```powershell
-python scripts\verify_kernel.py
-python scripts\verify_binary_layer.py
+python scripts\verify_packed_kernel.py --include-nonbinary
 python scripts\extract_tile_features.py --feature-mode binary-xnor --split val
 ```
 

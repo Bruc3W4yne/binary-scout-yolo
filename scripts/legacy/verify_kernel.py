@@ -7,7 +7,7 @@ reference implementation on randomised inputs.
 Runs multiple trials with different sizes and kernel shapes.
 
 Usage:
-    python scripts/verify_kernel.py
+    python scripts/legacy/verify_kernel.py
     (requires `make` to have been run to produce src/kernel.so)
 """
 

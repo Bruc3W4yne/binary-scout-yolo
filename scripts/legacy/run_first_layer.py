@@ -6,7 +6,7 @@ applies 64 configurable XNOR-Popcount filters (3×3 kernel, 24 channels),
 and saves the 64 integer score maps and 64 binary feature maps.
 
 Usage:
-    python3 scripts/run_first_layer.py [path/to/image.jpg]
+    python3 scripts/legacy/run_first_layer.py [path/to/image.jpg]
     (defaults to first image in data/VisDrone2019-DET-train/images/)
 
 Outputs in data/first_layer_output/:

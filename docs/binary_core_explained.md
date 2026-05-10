@@ -19,9 +19,11 @@ src/binary_layer.py
 Treat these as demos or legacy support, not final project logic:
 
 ```text
-scripts/run_first_layer.py
+scripts/legacy/run_first_layer.py
+scripts/legacy/benchmark_yolo.py
 scripts/legacy/benchmark_kernel.py
 scripts/legacy/benchmark_numpy_f32.py
+scripts/legacy/verify_kernel.py
 scripts/legacy/pack_data.py
 scripts/legacy/verify_packing.py
 scripts/legacy/sobel_demo.py
@@ -194,7 +196,7 @@ Random filters are fine for smoke tests. They are not evidence that the scout
 can find objects. To make this useful for the final project, tile scores must be
 trained or evaluated against VisDrone tile labels.
 
-## `scripts/run_first_layer.py`
+## `scripts/legacy/run_first_layer.py`
 
 This is a visualization/smoke script.
 

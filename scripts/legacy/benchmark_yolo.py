@@ -4,7 +4,7 @@ benchmark_yolo.py — Phase 3: YOLOv8n ONNX CPU inference benchmark
 Runs YOLOv8n (ONNX) on 100 random VisDrone images and records latency/FPS.
 
 Usage:
-    python scripts/benchmark_yolo.py
+    python scripts/legacy/benchmark_yolo.py
 """
 
 import json

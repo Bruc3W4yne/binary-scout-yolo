@@ -64,6 +64,8 @@ The pipeline is now runnable end to end:
 VisDrone image -> tile labels -> scout features -> top-K tiles -> YOLO on selected crops -> merged detections -> JSON metrics
 ```
 
+The scout can also render a tile-score heatmap with top-K borders via `scripts/render_scout_heatmap.py`.
+
 The best current claim is narrow and defensible:
 
 ```text

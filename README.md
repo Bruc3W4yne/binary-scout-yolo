@@ -51,6 +51,7 @@ python scripts\train_scout.py --train-features data\tile_features\bitplane_stats
 python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt --mode scout --top-k-values 4 8 12 16 20
 python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --mode random --top-k-values 4 8 12 16 20
 python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --mode oracle --top-k-values 4 8 12 16 20
+python scripts\render_scout_heatmap.py --features data\tile_features\bitplane_stats_spatial_val.npz --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt --mode scout --top-k 8
 ```
 
 For a quick smoke run, add `--max-images 25`; limited outputs are written with an `_n25` suffix so they cannot be mistaken for full-split caches.
