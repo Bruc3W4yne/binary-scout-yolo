@@ -43,9 +43,12 @@ python scripts\extract_tile_features.py --feature-mode bitplane-stats --split tr
 python scripts\extract_tile_features.py --feature-mode bitplane-stats --split val
 python scripts\verify_tile_features.py --feature-file data\tile_features\bitplane_stats_train.npz
 python scripts\verify_tile_features.py --feature-file data\tile_features\bitplane_stats_val.npz
-python scripts\train_scout.py --epochs 10 --device cuda
-python scripts\evaluate_scout_recall.py --mode scout --top-k-values 4 8 12 16 20
-python scripts\evaluate_scout_recall.py --mode random --top-k-values 4 8 12 16 20
+python scripts\add_spatial_features.py --features data\tile_features\bitplane_stats_train.npz
+python scripts\add_spatial_features.py --features data\tile_features\bitplane_stats_val.npz
+python scripts\train_scout.py --train-features data\tile_features\bitplane_stats_spatial_train.npz --val-features data\tile_features\bitplane_stats_spatial_val.npz --out-dir runs\scout_spatial --epochs 10 --device cuda
+python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --checkpoint runs\scout_spatial\scout_bitplane_stats_spatial.pt --mode scout --top-k-values 4 8 12 16 20
+python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --mode random --top-k-values 4 8 12 16 20
+python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --mode oracle --top-k-values 4 8 12 16 20
 ```
 
 For a quick smoke run, add `--max-images 25`; limited outputs are written with an `_n25` suffix so they cannot be mistaken for full-split caches.
@@ -65,8 +68,8 @@ Run detector/router smoke checks:
 python scripts\run_yolo_tiles.py --selector full --split val --max-images 2 --device cuda
 python scripts\run_yolo_tiles.py --selector random --top-k 8 --split val --max-images 2 --device cuda
 python scripts\run_yolo_tiles.py --selector oracle --top-k 8 --split val --max-images 2 --device cuda
-python scripts\run_yolo_tiles.py --selector scout --top-k 8 --split val --max-images 2 --device cuda --features data\tile_features\bitplane_stats_val_n25.npz --checkpoint runs\scout_smoke\scout_bitplane_stats.pt
-python scripts\run_yolo_tiles.py --selector scout-live --top-k 8 --split val --max-images 2 --device cuda --checkpoint runs\scout_smoke\scout_bitplane_stats.pt
+python scripts\run_yolo_tiles.py --selector scout --top-k 8 --split val --max-images 2 --device cuda --features data\tile_features\bitplane_stats_spatial_val.npz --checkpoint runs\scout_spatial\scout_bitplane_stats_spatial.pt
+python scripts\run_yolo_tiles.py --selector scout-live --top-k 8 --split val --max-images 2 --device cuda --checkpoint runs\scout_spatial\scout_bitplane_stats_spatial.pt
 ```
 
 `scout` uses cached tile scores to isolate detector routing. `scout-live` computes bitplane scout features inside the timed path and reports phase timings. These detector numbers are a pipeline smoke signal, not final VisDrone accuracy: `yolov8n.pt` is COCO-pretrained unless you later fine-tune or replace the weights.

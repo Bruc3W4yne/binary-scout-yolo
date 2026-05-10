@@ -40,6 +40,10 @@ def load_random_scores(n: int, seed: int) -> np.ndarray:
     return np.random.default_rng(seed).random(n).astype(np.float32)
 
 
+def load_oracle_scores(feature_data: dict[str, np.ndarray]) -> np.ndarray:
+    return feature_data["n_objects"].astype(np.float32)
+
+
 def parse_box_indices(raw: str) -> list[int]:
     return [int(value) for value in json.loads(str(raw))]
 
@@ -117,7 +121,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--features", type=Path, default=ROOT / "data" / "tile_features" / "bitplane_stats_val.npz")
     parser.add_argument("--checkpoint", type=Path, default=ROOT / "runs" / "scout" / "scout_bitplane_stats.pt")
-    parser.add_argument("--mode", choices=["scout", "random"], default="scout")
+    parser.add_argument("--mode", choices=["scout", "random", "oracle"], default="scout")
     parser.add_argument("--top-k-values", type=int, nargs="+", default=[4, 8, 12, 16, 20])
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out", type=Path, default=None)
@@ -128,11 +132,12 @@ def main() -> int:
     args = parse_args()
     try:
         data = load_feature_file(args.features)
-        scores = (
-            load_scout_scores(data, args.checkpoint)
-            if args.mode == "scout"
-            else load_random_scores(len(data["labels"]), args.seed)
-        )
+        if args.mode == "scout":
+            scores = load_scout_scores(data, args.checkpoint)
+        elif args.mode == "oracle":
+            scores = load_oracle_scores(data)
+        else:
+            scores = load_random_scores(len(data["labels"]), args.seed)
         results = {
             "mode": args.mode,
             "features": str(args.features),
@@ -142,7 +147,7 @@ def main() -> int:
 
         out = args.out
         if out is None:
-            name = "bitplane_stats" if args.mode == "scout" else "random"
+            name = "bitplane_stats" if args.mode == "scout" else args.mode
             out = ROOT / "data" / f"results_scout_recall_{name}.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(results, indent=2) + "\n")

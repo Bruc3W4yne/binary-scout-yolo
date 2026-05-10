@@ -29,7 +29,7 @@ from preprocess import (  # noqa: E402
     scale_boxes_to_resized,
     selected_area_fraction,
 )
-from scout import bitplane_stats_features, load_resized_rgb  # noqa: E402
+from scout import SPATIAL_FEATURE_DIM, bitplane_stats_features, load_resized_rgb, spatial_tile_features  # noqa: E402
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -127,7 +127,13 @@ def load_scout_scores(feature_path: Path, checkpoint_path: Path) -> dict[tuple[s
 
 def live_bitplane_scores(rgb: np.ndarray, records: list[dict], checkpoint: dict) -> dict[tuple[str, int], float]:
     tiles = [tile_from_record(record) for record in sorted(records, key=lambda item: int(item["tile_id"]))]
-    scores = score_features(bitplane_stats_features(rgb, tiles), checkpoint)
+    features = bitplane_stats_features(rgb, tiles)
+    feature_dim = int(checkpoint["feature_dim"])
+    if feature_dim == features.shape[1] + SPATIAL_FEATURE_DIM:
+        features = np.hstack([features, spatial_tile_features(tiles, img_size=rgb.shape[0])]).astype(np.float32)
+    elif feature_dim != features.shape[1]:
+        raise ValueError(f"live scout cannot produce checkpoint feature_dim={feature_dim}")
+    scores = score_features(features, checkpoint)
     stem = records[0]["stem"]
     return {
         (stem, tile.tile_id): float(score)

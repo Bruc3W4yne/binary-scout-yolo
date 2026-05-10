@@ -17,6 +17,8 @@ from binary_layer import BinaryConvLayer
 from preprocess import Tile, rgb_to_bitplanes
 
 BITPLANE_STATS_DIM = 30
+SPATIAL_FEATURE_DIM = 8
+BINARY_STATS_SPATIAL_DIM = BITPLANE_STATS_DIM + SPATIAL_FEATURE_DIM
 BINARY_XNOR_DIM = 64
 
 
@@ -63,6 +65,31 @@ def bitplane_stats_features(rgb: np.ndarray, tiles: list[Tile]) -> np.ndarray:
     features[:, :24] = _rect_means_chw(planes, tiles)
     features[:, 24:27] = rgb_means
     features[:, 27:30] = np.sqrt(np.maximum(rgb_sq_means - rgb_means * rgb_means, 0.0))
+
+    return features
+
+
+def spatial_tile_features(tiles: list[Tile], img_size: int = 640) -> np.ndarray:
+    if not tiles:
+        return np.empty((0, SPATIAL_FEATURE_DIM), dtype=np.float32)
+
+    max_row = max(tile.row for tile in tiles) or 1
+    max_col = max(tile.col for tile in tiles) or 1
+    features = np.empty((len(tiles), SPATIAL_FEATURE_DIM), dtype=np.float32)
+
+    for idx, tile in enumerate(tiles):
+        cx = ((tile.x1 + tile.x2) * 0.5) / img_size
+        cy = ((tile.y1 + tile.y2) * 0.5) / img_size
+        features[idx] = [
+            tile.row / max_row,
+            tile.col / max_col,
+            cx,
+            cy,
+            abs(cx - 0.5),
+            abs(cy - 0.5),
+            float(tile.x1 == 0 or tile.x2 == img_size),
+            float(tile.y1 == 0 or tile.y2 == img_size),
+        ]
 
     return features
 
