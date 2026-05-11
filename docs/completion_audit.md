@@ -44,7 +44,7 @@ Do not claim that this beats YOLO overall, is state of the art, is already drone
 | Binary-XNOR benchmark is available | Pass | `benchmark_xnor_kernel.py --synthetic --max-images 5 --runs 10 --warmup 2` wrote JSON and measured C XNOR paths against float references. |
 | Claim audit exists | Pass | `docs/final_project_claims.md` separates thesis, defensible claim, binary-XNOR claim, novelty framing, and claims to avoid. |
 | Long benchmark commands are ready | Pass | `docs/evaluation_protocol.md` lists tile-label recall, YOLO smoke, and longer K-sweep commands without adding a new experiment framework. |
-| Stale artifacts are removed | Pass | Legacy planning docs, stale `PROD.md`, stale legacy scripts, out-of-scope full-BNN detector experiment, the consumed `docs/next_goal.md`, and the internal review transcript were removed. |
+| Stale artifacts are removed | Pass | Legacy planning docs, stale `PROD.md`, stale legacy scripts, out-of-scope full-BNN detector experiment, and obsolete private process notes were removed. |
 | Final external review gate | Pass after fixes | The final review found no core source-code blocker. It rejected command-truth cleanup issues in `README.md`, `setup.ps1`, `docs/current_results.md`, and this audit; those issues were patched before handoff. |
 
 ## Windows Commands Run
@@ -130,12 +130,9 @@ python scripts\run_yolo_tiles.py --selector scout-live --top-k 8 --split val --m
 | `scripts/verify_tile_grid.py` | Keep | Explicit 49-tile grid contract check. |
 | `scripts/verify_routing.py` | Keep | Selector determinism and oracle-greedy checks. |
 | `tests/test_contracts.py` | Keep | Pytest wrapper around the fast verification scripts. |
-| `docs/next_goal.md` | Delete | Goal contract was consumed into this audit and should not remain as a stale internal truth source. |
-| `docs/pro_final_review.md` | Delete | Review feedback was consumed; keeping an AI-review transcript in the repo would be internal process noise. |
-
 ## LOC And Simplicity Check
 
-Before the final documentation cleanup, tracked source/docs were 7085 lines. After removing the consumed goal contract and internal review transcript, the active tracked repo is 6271 lines. The active repo keeps the code direct: no package framework, no plugin system, no abstract base hierarchy, no notebook, no GUI, no ONNX/TensorRT branch, and no full-BNN detector branch.
+Before the final documentation cleanup, tracked source/docs were 7085 lines. After removing obsolete private process notes, the active tracked repo is 6263 lines. The active repo keeps the code direct: no package framework, no plugin system, no abstract base hierarchy, no notebook, no GUI, no ONNX/TensorRT branch, and no full-BNN detector branch.
 
 The largest file is `src/kernel.c`, because the native C test harness lives beside the kernel. The largest Python script is `scripts/run_yolo_tiles.py`, because it owns the end-to-end smoke path and JSON timing output. Those are acceptable concentrations of complexity for a CLI school project, but they are also the first places to inspect if future changes grow scope.
 
