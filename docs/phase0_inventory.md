@@ -138,6 +138,20 @@ The clean tree used junctions to the existing ignored Windows `data` and `runs` 
 | `src/preprocess.py` | keep | Active VisDrone/tile contract code. |
 | `src/scout.py` | rewrite | Active feature/scout helpers; needs binary extractor reuse and metadata. |
 
+## Cleanup Actions Completed
+
+The following stale tracked material was deleted after the current pipeline, baselines, timing, and binary smoke path were verified:
+
+```text
+PROD.md
+docs/binary_core_explained.md
+docs/legacy_plans/
+scripts/legacy/
+experiments/bnn_detector/
+```
+
+`docs/binary_xnor_core.md` replaces the long binary explainer with current binary-core truth. `README.md`, `docs/current_results.md`, `docs/research_framing.md`, `docs/binary_xnor_core.md`, and `docs/completion_audit.md` are the active handoff docs.
+
 ## Confirmed First Fix
 
 `scripts/benchmark_packed.py` was replaced with `scripts/benchmark_xnor_kernel.py`.
