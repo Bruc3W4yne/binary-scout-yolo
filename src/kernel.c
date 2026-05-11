@@ -319,7 +319,9 @@ KERNEL_EXPORT int xnor_multi_filter_conv(
      *   2. Applies all n_filters to those cached patches — no re-reading input.
      * This minimises input reads while keeping output writes sequential within
      * each filter's row range for a given thread. */
+    #ifdef _OPENMP
     #pragma omp parallel for schedule(static)
+    #endif
     for (int r = 0; r < rows; r++) {
         uint64_t patches[128];
         for (int c = 0; c < cols; c++) {
