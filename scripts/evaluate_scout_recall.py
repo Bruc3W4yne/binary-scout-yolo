@@ -49,7 +49,7 @@ def build_model(feature_dim: int, hidden_dim: int) -> torch.nn.Module:
 
 
 def load_scout_scores(feature_data: dict[str, np.ndarray], checkpoint_path: Path) -> np.ndarray:
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     features = torch.from_numpy(feature_data["features"].astype(np.float32))
     mean = checkpoint["mean"].float()
     std = checkpoint["std"].float()

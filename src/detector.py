@@ -134,6 +134,7 @@ def match_recall(
     medium_area: float = 96.0 * 96.0,
 ) -> dict:
     matched: set[int] = set()
+    matched_detections = 0
     for det in sorted(detections, key=lambda item: item.score, reverse=True):
         best_idx = None
         best_iou = 0.0
@@ -146,12 +147,20 @@ def match_recall(
                 best_idx = idx
         if best_idx is not None and best_iou >= iou_threshold:
             matched.add(best_idx)
+            matched_detections += 1
 
     total = len(boxes)
+    false_positives = max(len(detections) - matched_detections, 0)
+    precision = matched_detections / len(detections) if detections else 0.0
+    recall = len(matched) / total if total else 0.0
     result = {
         "gt_boxes": total,
         "matched_gt": len(matched),
-        "recall": len(matched) / total if total else 0.0,
+        "matched_detections": matched_detections,
+        "false_positives": false_positives,
+        "precision": precision,
+        "f1": 2.0 * precision * recall / (precision + recall) if precision + recall else 0.0,
+        "recall": recall,
     }
 
     buckets = {

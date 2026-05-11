@@ -136,6 +136,9 @@ def verify_match_recall() -> None:
     result = match_recall(detections, boxes, iou_threshold=0.5)
     expect(result["gt_boxes"] == 2, "GT count mismatch")
     expect(result["matched_gt"] == 1, "only one detection should match at IoU 0.5")
+    expect(result["matched_detections"] == 1, "matched detection count mismatch")
+    expect(result["false_positives"] == 1, "false-positive count mismatch")
+    expect(result["precision"] == 0.5, "unexpected precision")
     expect(result["recall"] == 0.5, "unexpected recall")
 
 
@@ -176,6 +179,8 @@ def verify_yolo_timing_summary() -> None:
             "selected_area_fraction": 0.25,
             "detector_calls": 8,
             "detections": 2,
+            "matched_detections": 1,
+            "false_positives": 1,
             "gt_boxes": 2,
             "matched_gt": 1,
             "latency_ms": 18.0,
@@ -186,6 +191,8 @@ def verify_yolo_timing_summary() -> None:
             "selected_area_fraction": 0.50,
             "detector_calls": 4,
             "detections": 4,
+            "matched_detections": 2,
+            "false_positives": 2,
             "gt_boxes": 2,
             "matched_gt": 2,
             "latency_ms": 20.0,
@@ -194,6 +201,8 @@ def verify_yolo_timing_summary() -> None:
     ]
     summary = summarize(rows, Namespace(selector="scout", crop_source="resized", top_k=8))
     expect(summary["class_agnostic_recall"] == 0.75, "summary recall should aggregate counts")
+    expect(summary["class_agnostic_precision"] == 0.5, "summary precision should aggregate counts")
+    expect(summary["false_positives"] == 3, "summary false positives mismatch")
     expect(summary["mean_detector_calls"] == 6.0, "detector call summary mismatch")
     expect(summary["latency_ms"]["mean"] == 19.0, "latency mean should use pipeline latency")
     expect(summary["phase_ms"]["pipeline_ms_excl_gt"]["mean"] == 19.0, "pipeline phase mean mismatch")

@@ -10,7 +10,7 @@ UAV image -> binary/XNOR scout tile scores -> top-K tiles -> YOLO on selected cr
 
 The current repo implements the verified binary core, VisDrone tile dataset generation, C-free and binary-XNOR scout features, scout recall evaluation, and YOLO selected-tile routing. Tiled detector runs can now use `--crop-source original` so the scout selects on the 640x640 grid while YOLO runs on original-resolution crops.
 
-See `docs/current_results.md` for the latest Windows RTX 4090 smoke results and caveats. See `docs/final_project_claims.md` for the defensible novelty/claim framing, `docs/evaluation_protocol.md` for longer benchmark commands, `docs/binary_xnor_core.md` for the native binary core, and `docs/completion_audit.md` for the current phase-gate handoff.
+See `docs/final_binary_pass_results.md` for the latest Windows RTX 4090 binary-live results. See `docs/current_results.md` for historical smoke results and caveats, `docs/final_project_claims.md` for the defensible novelty/claim framing, `docs/evaluation_protocol.md` for longer benchmark commands, `docs/binary_xnor_core.md` for the native binary core, and `docs/completion_audit.md` for the current phase-gate handoff.
 
 ## Windows Quickstart
 
@@ -79,17 +79,32 @@ Extract binary-XNOR scout features:
 ```powershell
 python scripts\extract_tile_features.py --feature-mode binary-xnor --split val --max-images 25
 python scripts\verify_tile_features.py --feature-file data\tile_features\binary_xnor_val_n25.npz --expect-feature-dim 64 --expect-feature-mode binary-xnor
+python scripts\extract_tile_features.py --feature-mode binary-xnor-hybrid --split val --max-images 25
+python scripts\verify_tile_features.py --feature-file data\tile_features\binary_xnor_hybrid_val_n25.npz --expect-feature-dim 72 --expect-feature-mode binary-xnor-hybrid
 ```
 
 Remove `--max-images` when ready for the full split.
 
-Train and evaluate a cached binary-XNOR scout comparison:
+Train and evaluate cached pure and hybrid binary-XNOR scout comparisons:
 
 ```powershell
 python scripts\extract_tile_features.py --feature-mode binary-xnor --split train
 python scripts\extract_tile_features.py --feature-mode binary-xnor --split val
 python scripts\train_scout.py --train-features data\tile_features\binary_xnor_train.npz --val-features data\tile_features\binary_xnor_val.npz --out-dir runs\scout_binary_xnor_mlp --hidden-dim 64 --epochs 30 --device cuda
 python scripts\evaluate_scout_recall.py --features data\tile_features\binary_xnor_val.npz --checkpoint runs\scout_binary_xnor_mlp\scout_binary_xnor.pt --mode scout --top-k-values 4 8 12 16 20
+python scripts\extract_tile_features.py --feature-mode binary-xnor-hybrid --split train
+python scripts\extract_tile_features.py --feature-mode binary-xnor-hybrid --split val
+python scripts\train_scout.py --train-features data\tile_features\binary_xnor_hybrid_train.npz --val-features data\tile_features\binary_xnor_hybrid_val.npz --out-dir runs\scout_binary_xnor_hybrid_mlp --hidden-dim 64 --epochs 30 --count-alpha 0.2 --device cuda
+python scripts\evaluate_scout_recall.py --features data\tile_features\binary_xnor_hybrid_val.npz --checkpoint runs\scout_binary_xnor_hybrid_mlp\scout_binary_xnor_hybrid.pt --mode scout --top-k-values 4 8 12 16 20
+```
+
+For the practical live binary route, reuse the full 64-filter binary cache and keep a smaller filter budget before adding spatial features:
+
+```powershell
+python scripts\add_spatial_features.py --features data\tile_features\binary_xnor_train.npz --out data\tile_features\binary_xnor8_hybrid_train.npz --keep-first-features 8
+python scripts\add_spatial_features.py --features data\tile_features\binary_xnor_val.npz --out data\tile_features\binary_xnor8_hybrid_val.npz --keep-first-features 8
+python scripts\train_scout.py --train-features data\tile_features\binary_xnor8_hybrid_train.npz --val-features data\tile_features\binary_xnor8_hybrid_val.npz --out-dir runs\scout_binary_xnor8_hybrid_mlp --hidden-dim 64 --epochs 30 --count-alpha 0.2 --device cuda
+python scripts\run_yolo_tiles.py --selector binary-xnor-live --crop-source original --top-k 8 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\scout_binary_xnor8_hybrid_mlp\scout_binary_xnor_hybrid.pt
 ```
 
 Run detector/router smoke checks:
@@ -103,11 +118,12 @@ python scripts\run_yolo_tiles.py --selector heuristic --crop-source original --t
 python scripts\run_yolo_tiles.py --selector oracle-greedy --crop-source original --top-k 8 --split val --max-images 2 --device cuda
 python scripts\run_yolo_tiles.py --selector scout --crop-source original --top-k 8 --split val --max-images 2 --device cuda --features data\tile_features\bitplane_stats_spatial_val.npz --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt
 python scripts\run_yolo_tiles.py --selector scout-live --crop-source original --top-k 8 --split val --max-images 2 --device cuda --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt
+python scripts\run_yolo_tiles.py --selector binary-xnor-live --crop-source original --top-k 8 --split val --max-images 2 --device cuda --checkpoint runs\scout_binary_xnor_hybrid_mlp\scout_binary_xnor_hybrid.pt
 ```
 
-`scout` uses cached tile scores to isolate detector routing. `scout-live` computes bitplane scout features inside the timed path and reports phase timings. `prior`, `heuristic`, and `oracle-greedy` are baselines that keep the scout claim honest. Use `--crop-source original` for the high-resolution tiling claim; the default `resized` mode is retained as a control. These detector numbers are a pipeline smoke signal, not final VisDrone accuracy: `yolov8n.pt` is COCO-pretrained unless you later fine-tune or replace the weights.
+`scout` uses cached tile scores to isolate detector routing. `scout-live` computes the checkpoint's feature mode inside the timed path; `binary-xnor-live` is a stricter alias that requires a binary-XNOR checkpoint and writes bitplane/pack/XNOR/threshold/tile-summary/MLP/top-K timing fields. `prior`, `heuristic`, and `oracle-greedy` are baselines that keep the scout claim honest. Use `--crop-source original` for the high-resolution tiling claim; the default `resized` mode is retained as a control. These detector numbers are a pipeline smoke signal, not final VisDrone accuracy: `yolov8n.pt` is COCO-pretrained unless you later fine-tune or replace the weights.
 
-`run_yolo_tiles.py` uses one warmup image by default and prints pipeline latency excluding ground-truth parsing. The JSON output also includes detector input counts, small/medium/large object recall, image-load, resize, ground-truth, scout, YOLO, merge/NMS, match/eval, pipeline, and wall-clock timing summaries. `detector_calls` means detector inputs/crops evaluated, not Python `model.predict()` calls.
+`run_yolo_tiles.py` uses one warmup image by default and prints pipeline latency excluding ground-truth parsing. The JSON output also includes detector input counts, precision/false-positive sanity metrics, small/medium/large object recall, image-load, resize, ground-truth, scout, YOLO, merge/NMS, match/eval, pipeline, and wall-clock timing summaries. `detector_calls` means detector inputs/crops evaluated, not Python `model.predict()` calls.
 
 ## Data Contract
 

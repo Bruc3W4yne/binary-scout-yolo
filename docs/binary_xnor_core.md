@@ -23,8 +23,11 @@ RGB image
 
 ```text
 forward([channels, H, W] uint8) -> [filters, H, W] int32 scores
+forward_packed([H, W] uint64) -> [filters, H, W] int32 scores
 apply_threshold(scores) -> [filters, H, W] uint8 maps
 ```
+
+`forward_packed` uses the same native kernel as `forward`; it exists so live benchmarks can time bitplane extraction, packing, XNOR-popcount, thresholding, tile summaries, and MLP scoring separately.
 
 `src/scout.py` exposes `BinaryXnorExtractor`, which reuses one `BinaryConvLayer` across a feature extraction run and records binary metadata:
 
@@ -72,3 +75,25 @@ python scripts\verify_tile_features.py --feature-file data\tile_features_smoke\b
 ```
 
 The binary feature smoke should produce 49 tile rows for the default 7x7 grid and include binary metadata in `metadata_json`.
+
+Hybrid binary scout smoke:
+
+```powershell
+python scripts\extract_tile_features.py --feature-mode binary-xnor-hybrid --split val --max-images 1 --out-dir data\tile_features_smoke --progress-every 0
+python scripts\verify_tile_features.py --feature-file data\tile_features_smoke\binary_xnor_hybrid_val_n1.npz --expect-feature-dim 72 --expect-feature-mode binary-xnor-hybrid
+```
+
+Filter-budget hybrid from an existing 64-filter binary cache:
+
+```powershell
+python scripts\add_spatial_features.py --features data\tile_features\binary_xnor_val.npz --out data\tile_features\binary_xnor8_hybrid_val.npz --keep-first-features 8
+python scripts\verify_tile_features.py --feature-file data\tile_features\binary_xnor8_hybrid_val.npz --expect-feature-dim 16 --expect-feature-mode binary-xnor-hybrid
+```
+
+Live detector route smoke after training a binary checkpoint:
+
+```powershell
+python scripts\run_yolo_tiles.py --selector binary-xnor-live --crop-source original --top-k 8 --split val --max-images 2 --device cuda --checkpoint runs\scout_binary_xnor_hybrid_mlp\scout_binary_xnor_hybrid.pt
+```
+
+The live route must be used for binary latency claims. Cached binary feature files are useful for training and routing-quality ablations, but they hide preprocessing and XNOR-popcount time.

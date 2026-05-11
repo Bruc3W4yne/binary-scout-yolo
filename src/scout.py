@@ -9,6 +9,7 @@ binary-XNOR path is kept as a separate feature extractor.
 from __future__ import annotations
 
 import hashlib
+import time
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +22,7 @@ BITPLANE_STATS_DIM = 30
 SPATIAL_FEATURE_DIM = 8
 BINARY_STATS_SPATIAL_DIM = BITPLANE_STATS_DIM + SPATIAL_FEATURE_DIM
 BINARY_XNOR_DIM = 64
+BINARY_XNOR_HYBRID_DIM = BINARY_XNOR_DIM + SPATIAL_FEATURE_DIM
 _DEFAULT_BLOCK = 80
 _DEFAULT_TILE = 160
 _DEFAULT_IMAGE = 640
@@ -58,6 +60,31 @@ def _rect_means_chw(values: np.ndarray, tiles: list[Tile]) -> np.ndarray:
     integral = np.pad(integral, ((0, 0), (1, 0), (1, 0)))
     sums = integral[:, y2, x2] - integral[:, y1, x2] - integral[:, y2, x1] + integral[:, y1, x1]
     return (sums / areas).T.astype(np.float32)
+
+
+def _rect_means_chw_default_grid(values: np.ndarray, tiles: list[Tile]) -> np.ndarray:
+    values = np.asarray(values, dtype=np.float32)
+    if values.ndim != 3 or values.shape[1:] != (_DEFAULT_IMAGE, _DEFAULT_IMAGE):
+        raise ValueError(f"values must have shape [C, 640, 640], got {values.shape}")
+    if not tiles:
+        return np.empty((0, values.shape[0]), dtype=np.float32)
+
+    block_means = values.reshape(
+        values.shape[0],
+        _DEFAULT_BLOCKS,
+        _DEFAULT_BLOCK,
+        _DEFAULT_BLOCKS,
+        _DEFAULT_BLOCK,
+    ).mean(axis=(2, 4))
+    rows = np.asarray([tile.y1 // _DEFAULT_BLOCK for tile in tiles], dtype=np.intp)
+    cols = np.asarray([tile.x1 // _DEFAULT_BLOCK for tile in tiles], dtype=np.intp)
+    features = (
+        block_means[:, rows, cols]
+        + block_means[:, rows + 1, cols]
+        + block_means[:, rows, cols + 1]
+        + block_means[:, rows + 1, cols + 1]
+    ) * 0.25
+    return features.T.astype(np.float32)
 
 
 def load_resized_rgb(path: Path, img_size: int = 640) -> np.ndarray:
@@ -169,6 +196,15 @@ def spatial_tile_features(tiles: list[Tile], img_size: int = 640) -> np.ndarray:
     return features
 
 
+def append_spatial_features(features: np.ndarray, tiles: list[Tile], img_size: int = 640) -> np.ndarray:
+    features = np.asarray(features, dtype=np.float32)
+    if features.ndim != 2:
+        raise ValueError(f"features must have shape [N, D], got {features.shape}")
+    if features.shape[0] != len(tiles):
+        raise ValueError(f"features rows {features.shape[0]} do not match tiles {len(tiles)}")
+    return np.hstack([features, spatial_tile_features(tiles, img_size=img_size)]).astype(np.float32)
+
+
 class BinaryXnorExtractor:
     def __init__(
         self,
@@ -203,14 +239,42 @@ class BinaryXnorExtractor:
         }
 
     def features(self, rgb: np.ndarray, tiles: list[Tile]) -> np.ndarray:
-        rgb = _as_rgb_u8(rgb)
+        features, _ = self.features_with_timing(rgb, tiles)
+        return features
 
+    def features_with_timing(self, rgb: np.ndarray, tiles: list[Tile]) -> tuple[np.ndarray, dict[str, float]]:
+        rgb = _as_rgb_u8(rgb)
+        timing: dict[str, float] = {}
+
+        started = time.perf_counter()
         planes = rgb_to_bitplanes(rgb)
+        timing["bitplanes_ms"] = (time.perf_counter() - started) * 1000.0
         if planes.shape[0] != self.layer.n_ch:
             raise ValueError(f"expected {self.layer.n_ch} bitplanes, got {planes.shape[0]}")
-        scores = self.layer.forward(planes)
+
+        started = time.perf_counter()
+        input_packed = self.layer.pack_input(planes)
+        timing["pack_ms"] = (time.perf_counter() - started) * 1000.0
+
+        started = time.perf_counter()
+        scores = self.layer.forward_packed(input_packed)
+        timing["xnor_kernel_ms"] = (time.perf_counter() - started) * 1000.0
+
+        started = time.perf_counter()
         binary_maps = self.layer.apply_threshold(scores, threshold=self.threshold).astype(np.float32)
-        return _rect_means_chw(binary_maps, tiles)
+        timing["threshold_ms"] = (time.perf_counter() - started) * 1000.0
+
+        started = time.perf_counter()
+        if _uses_default_grid(rgb, tiles):
+            features = _rect_means_chw_default_grid(binary_maps, tiles)
+        else:
+            features = _rect_means_chw(binary_maps, tiles)
+        timing["tile_summary_ms"] = (time.perf_counter() - started) * 1000.0
+        return features, timing
+
+    def hybrid_features(self, rgb: np.ndarray, tiles: list[Tile]) -> np.ndarray:
+        rgb = _as_rgb_u8(rgb)
+        return append_spatial_features(self.features(rgb, tiles), tiles, img_size=rgb.shape[0])
 
 
 def binary_xnor_features(
@@ -228,3 +292,20 @@ def binary_xnor_features(
         seed=seed,
     )
     return extractor.features(rgb, tiles)
+
+
+def binary_xnor_hybrid_features(
+    rgb: np.ndarray,
+    tiles: list[Tile],
+    n_filters: int = BINARY_XNOR_DIM,
+    kernel_size: int = 3,
+    threshold: int = 0,
+    seed: int = 42,
+) -> np.ndarray:
+    extractor = BinaryXnorExtractor(
+        n_filters=n_filters,
+        kernel_size=kernel_size,
+        threshold=threshold,
+        seed=seed,
+    )
+    return extractor.hybrid_features(rgb, tiles)

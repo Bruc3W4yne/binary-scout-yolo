@@ -17,16 +17,19 @@ from torch.utils.data import DataLoader, TensorDataset
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def load_features(path: Path) -> tuple[np.ndarray, np.ndarray, dict]:
+def load_features(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     data = np.load(path)
     features = data["features"].astype(np.float32)
     labels = data["labels"].astype(np.float32)
+    n_objects = data["n_objects"].astype(np.float32) if "n_objects" in data.files else np.zeros_like(labels)
     metadata = json.loads(str(data["metadata_json"].item()))
     if features.ndim != 2:
         raise ValueError(f"features must be 2D, got {features.shape}")
     if labels.shape != (features.shape[0],):
         raise ValueError(f"labels shape {labels.shape} does not match features")
-    return features, labels, metadata
+    if n_objects.shape != labels.shape:
+        raise ValueError(f"n_objects shape {n_objects.shape} does not match labels")
+    return features, labels, n_objects, metadata
 
 
 def choose_device(device: str) -> torch.device:
@@ -35,14 +38,21 @@ def choose_device(device: str) -> torch.device:
     return torch.device(device)
 
 
-def evaluate(model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor) -> dict:
+def count_targets(n_objects: np.ndarray, cmax: float) -> np.ndarray:
+    cmax = max(float(cmax), 1.0)
+    clipped = np.minimum(n_objects.astype(np.float32), cmax)
+    return (np.log1p(clipped) / np.log1p(cmax)).astype(np.float32)
+
+
+def evaluate(model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, count_y: torch.Tensor) -> dict:
     model.eval()
     with torch.no_grad():
         logits = model(x).squeeze(1)
         loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, y)
+        count_mse = torch.nn.functional.mse_loss(torch.sigmoid(logits), count_y)
         pred = (torch.sigmoid(logits) >= 0.5).float()
         acc = (pred == y).float().mean()
-    return {"loss": float(loss.item()), "accuracy": float(acc.item())}
+    return {"loss": float(loss.item()), "count_mse": float(count_mse.item()), "accuracy": float(acc.item())}
 
 
 def artifact_stem(feature_mode: str) -> str:
@@ -69,6 +79,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch", type=int, default=1024)
     parser.add_argument("--hidden-dim", type=int, default=0, help="0 uses a linear scout")
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--pos-weight-scale", type=float, default=1.0)
+    parser.add_argument("--count-alpha", type=float, default=0.0)
+    parser.add_argument("--count-cmax", type=float, default=5.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     return parser.parse_args()
@@ -81,8 +94,17 @@ def main() -> int:
     torch.manual_seed(args.seed)
 
     try:
-        x_train, y_train, metadata = load_features(args.train_features)
-        x_val, y_val, _ = load_features(args.val_features)
+        if args.pos_weight_scale <= 0:
+            raise ValueError("--pos-weight-scale must be positive")
+        if args.count_alpha < 0:
+            raise ValueError("--count-alpha must be nonnegative")
+        if args.count_cmax <= 0:
+            raise ValueError("--count-cmax must be positive")
+
+        x_train, y_train, n_train, metadata = load_features(args.train_features)
+        x_val, y_val, n_val, _ = load_features(args.val_features)
+        c_train = count_targets(n_train, args.count_cmax)
+        c_val = count_targets(n_val, args.count_cmax)
 
         mean = x_train.mean(axis=0, keepdims=True)
         std = x_train.std(axis=0, keepdims=True)
@@ -94,6 +116,7 @@ def main() -> int:
         train_ds = TensorDataset(
             torch.from_numpy(x_train),
             torch.from_numpy(y_train),
+            torch.from_numpy(c_train),
         )
         train_loader = DataLoader(train_ds, batch_size=args.batch, shuffle=True)
 
@@ -101,37 +124,49 @@ def main() -> int:
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
         positives = float(y_train.sum())
         negatives = float(len(y_train) - positives)
-        pos_weight = torch.tensor([negatives / max(positives, 1.0)], device=device)
+        pos_weight = torch.tensor([(negatives / max(positives, 1.0)) * args.pos_weight_scale], device=device)
         criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
         x_val_t = torch.from_numpy(x_val).to(device)
         y_val_t = torch.from_numpy(y_val).to(device)
+        c_val_t = torch.from_numpy(c_val).to(device)
         log = []
 
         for epoch in range(1, args.epochs + 1):
             model.train()
             total_loss = 0.0
-            for xb, yb in train_loader:
+            total_bce = 0.0
+            total_count = 0.0
+            for xb, yb, cb in train_loader:
                 xb = xb.to(device)
                 yb = yb.to(device)
+                cb = cb.to(device)
                 optimizer.zero_grad(set_to_none=True)
                 logits = model(xb).squeeze(1)
-                loss = criterion(logits, yb)
+                bce_loss = criterion(logits, yb)
+                count_loss = torch.nn.functional.mse_loss(torch.sigmoid(logits), cb)
+                loss = bce_loss + args.count_alpha * count_loss
                 loss.backward()
                 optimizer.step()
                 total_loss += float(loss.item()) * len(xb)
+                total_bce += float(bce_loss.item()) * len(xb)
+                total_count += float(count_loss.item()) * len(xb)
 
-            val_metrics = evaluate(model, x_val_t, y_val_t)
+            val_metrics = evaluate(model, x_val_t, y_val_t, c_val_t)
             row = {
                 "epoch": epoch,
                 "train_loss": total_loss / len(train_ds),
+                "train_bce_loss": total_bce / len(train_ds),
+                "train_count_mse": total_count / len(train_ds),
                 "val_loss": val_metrics["loss"],
+                "val_count_mse": val_metrics["count_mse"],
                 "val_accuracy": val_metrics["accuracy"],
             }
             log.append(row)
             print(
                 f"epoch={epoch:03d} train_loss={row['train_loss']:.4f} "
-                f"val_loss={row['val_loss']:.4f} val_acc={row['val_accuracy']:.3f}"
+                f"val_loss={row['val_loss']:.4f} val_count_mse={row['val_count_mse']:.4f} "
+                f"val_acc={row['val_accuracy']:.3f}"
             )
 
         args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -146,8 +181,13 @@ def main() -> int:
                 "mean": torch.from_numpy(mean.astype(np.float32)),
                 "std": torch.from_numpy(std.astype(np.float32)),
                 "state_dict": model.cpu().state_dict(),
+                "feature_metadata": metadata,
                 "train_features": str(args.train_features),
                 "val_features": str(args.val_features),
+                "pos_weight": float(pos_weight.item()),
+                "pos_weight_scale": float(args.pos_weight_scale),
+                "count_alpha": float(args.count_alpha),
+                "count_cmax": float(args.count_cmax),
             },
             checkpoint_path,
         )
@@ -161,6 +201,7 @@ def main() -> int:
     print(f"PASS  checkpoint={checkpoint_path}")
     print(f"PASS  log={log_path}")
     print(f"PASS  pos_weight={float(pos_weight.item()):.3f}")
+    print(f"PASS  count_alpha={args.count_alpha:.3f} count_cmax={args.count_cmax:.1f}")
     return 0
 
 

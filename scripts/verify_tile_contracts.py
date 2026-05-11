@@ -26,7 +26,12 @@ from preprocess import (  # noqa: E402
     scale_boxes_to_resized,
     selected_area_fraction,
 )
-from scout import bitplane_stats_features, _bitplane_stats_features_integral  # noqa: E402
+from scout import (  # noqa: E402
+    _bitplane_stats_features_integral,
+    _rect_means_chw,
+    _rect_means_chw_default_grid,
+    bitplane_stats_features,
+)
 
 
 def assert_close(actual: float, expected: float, name: str, eps: float = 1e-9) -> None:
@@ -139,6 +144,17 @@ def verify_bitplane_stats_fast_path() -> None:
             raise AssertionError(f"{name} bitplane stats fast path drifted by {diff}")
 
 
+def verify_default_grid_rect_means() -> None:
+    rng = np.random.default_rng(456)
+    tiles = make_tiles(640, 160, 80)
+    values = rng.integers(0, 2, size=(7, 640, 640), dtype=np.uint8).astype(np.float32)
+    fast = _rect_means_chw_default_grid(values, tiles)
+    reference = _rect_means_chw(values, tiles)
+    if not np.allclose(fast, reference, atol=1e-6, rtol=1e-6):
+        diff = float(np.max(np.abs(fast - reference)))
+        raise AssertionError(f"default-grid rect means drifted by {diff}")
+
+
 def verify_selected_area() -> None:
     tiles = make_tiles(640, 160, 80)
     area = selected_area_fraction([tiles[0], tiles[1]], img_size=640)
@@ -165,6 +181,7 @@ def main() -> int:
         ("visdrone_parser_and_scaling", verify_parser_and_scaling),
         ("rgb_bitplanes_roundtrip", verify_bitplanes),
         ("bitplane_stats_fast_path", verify_bitplane_stats_fast_path),
+        ("default_grid_rect_means", verify_default_grid_rect_means),
         ("selected_area_union", verify_selected_area),
         ("deterministic_split", verify_split),
     ]

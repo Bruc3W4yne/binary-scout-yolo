@@ -156,6 +156,26 @@ class BinaryConvLayer:
     # Forward pass
     # ------------------------------------------------------------------
 
+    def forward_packed(self, input_packed: np.ndarray) -> np.ndarray:
+        """
+        Apply all filters to an already packed [H, W] uint64 input.
+
+        This is the same native kernel used by forward(), exposed so live
+        benchmarks can time packing and XNOR-popcount separately.
+        """
+        input_packed = np.asarray(input_packed)
+        if input_packed.ndim != 2:
+            raise ValueError(f"Expected [H, W] packed input, got shape {input_packed.shape}")
+
+        return kw.xnor_multi_filter_conv(
+            input_packed,
+            self.pack_all_weights(),
+            self.kH,
+            self.kW,
+            self.n_ch,
+            self.n_filters,
+        )
+
     def forward(self, planes: np.ndarray) -> np.ndarray:
         """
         Apply all n_filters XNOR-Popcount convolutions to the input planes.
@@ -179,14 +199,8 @@ class BinaryConvLayer:
         if planes.shape[0] != self.n_ch:
             raise ValueError(f"Expected {self.n_ch} input channels, got {planes.shape[0]}")
 
-        input_packed   = self.pack_input(planes)       # [H, W] uint64
-        weights_packed = self.pack_all_weights()       # [n_filters, kH, kW] uint64
-
-        return kw.xnor_multi_filter_conv(
-            input_packed, weights_packed,
-            self.kH, self.kW,
-            self.n_ch, self.n_filters,
-        )
+        input_packed = self.pack_input(planes)
+        return self.forward_packed(input_packed)
 
     def apply_threshold(self, scores: np.ndarray, threshold: int = 0) -> np.ndarray:
         """

@@ -26,7 +26,16 @@ Selected original-resolution tile inference recovers part of the all-tile recall
 
 The native C binary path is a verified edge-oriented scout feature implementation. It proves the project has a narrow XNOR/popcount core and Python wrapper that can be tested and benchmarked.
 
-It is not yet evidence that binary-XNOR is the fastest live scout on the target machine or the source of the best reported routing result. That requires a binary-XNOR scout feature extraction, training, and recall table against the current bitplane/spatial scout.
+The final binary comparison should separate:
+
+```text
+binary-xnor pure: XNOR-popcount tile summaries only
+binary-xnor hybrid: XNOR-popcount tile summaries plus cheap tile geometry/spatial-prior features
+```
+
+The hybrid route is still a binary-centered scout because the image features come from packed bitplanes and C XNOR-popcount filters, but it must not be described as pure binary. Binary latency claims require `binary-xnor-live`, not cached features.
+
+After the final binary pass, the most defensible binary result is the 8-filter live hybrid: it improves over the previous binary scout, keeps the XNOR-popcount visual path, and is faster than exhaustive tiling, but it is still slower than the spatial scout. The pure 64-filter binary route is now measured as a live detector row and proves the ablation, but it is too slow to be the practical route. The 64-filter hybrid is a useful high-recall ablation, not the deployable configuration.
 
 ## Claims To Avoid
 

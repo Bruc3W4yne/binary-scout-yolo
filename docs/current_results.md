@@ -6,7 +6,7 @@ These are not final paper-quality numbers. They are pipeline validation numbers 
 
 For the exact commands verified in the final handoff pass, see `docs/completion_audit.md`.
 
-After that handoff, the current source added `detector_calls`, an equivalent default-grid fast path for live bitplane feature extraction, original-resolution tiled detector crops via `--crop-source original`, and small/medium/large recall fields. Do not claim updated Windows latency or high-resolution crop results until the current source is rerun on the Windows RTX 4090 machine.
+After that handoff, the current source added `detector_calls`, an equivalent default-grid fast path for live bitplane feature extraction, original-resolution tiled detector crops via `--crop-source original`, small/medium/large recall fields, precision/false-positive sanity metrics, and a live `binary-xnor-live` route with pure/hybrid binary scout support. The latest binary-live Windows results are now summarized in `docs/final_binary_pass_results.md`.
 
 ## Artifacts Verified
 
@@ -164,5 +164,5 @@ The historical live scout timing showed that feature extraction was the main opt
 
 1. Rerun the YOLO selector table with `--crop-source original` on the same validation subset.
 2. Compare `full`, `all`, random, prior, heuristic, oracle-greedy, cached scout, and live scout with the same image count and K values.
-3. Train/evaluate binary-XNOR scout features if the final report title or presentation says binary scout.
+3. Train/evaluate pure and hybrid binary-XNOR scout features, then rerun `binary-xnor-live` at K=8 and K=12.
 4. Decide whether YOLO must be fine-tuned on VisDrone for class-aware mAP, or whether class-agnostic and small-object recall are enough for the school scope.

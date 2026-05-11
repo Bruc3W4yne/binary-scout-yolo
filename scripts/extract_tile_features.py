@@ -2,8 +2,9 @@
 Extract scout features for a tile JSONL split.
 
 Feature modes:
-  bitplane-stats -> 30 float32 features per tile
-  binary-xnor    -> C-kernel binary convolution summaries per tile
+  bitplane-stats     -> 30 float32 features per tile
+  binary-xnor        -> C-kernel binary convolution summaries per tile
+  binary-xnor-hybrid -> binary-XNOR summaries plus tile-position features
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from scout import (  # noqa: E402
     BINARY_XNOR_DIM,
     BITPLANE_STATS_DIM,
     BinaryXnorExtractor,
+    SPATIAL_FEATURE_DIM,
     bitplane_stats_features,
     load_resized_rgb,
 )
@@ -76,7 +78,7 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
     box_indices = []
     box_offsets = [0]
     binary_extractor = None
-    if args.feature_mode == "binary-xnor":
+    if args.feature_mode.startswith("binary-xnor"):
         binary_extractor = BinaryXnorExtractor(
             n_filters=args.binary_filters,
             kernel_size=args.binary_kernel_size,
@@ -90,10 +92,16 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
         tiles = [tile_from_record(record) for record in image_records]
         if args.feature_mode == "bitplane-stats":
             image_features = bitplane_stats_features(rgb, tiles)
-        else:
+        elif args.feature_mode == "binary-xnor":
             if binary_extractor is None:
                 raise RuntimeError("binary extractor was not initialized")
             image_features = binary_extractor.features(rgb, tiles)
+        elif args.feature_mode == "binary-xnor-hybrid":
+            if binary_extractor is None:
+                raise RuntimeError("binary extractor was not initialized")
+            image_features = binary_extractor.hybrid_features(rgb, tiles)
+        else:
+            raise ValueError(f"unsupported feature mode: {args.feature_mode}")
 
         features.append(image_features)
         for record in image_records:
@@ -137,7 +145,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tile-dir", type=Path, default=ROOT / "data" / "tile_dataset")
     parser.add_argument("--out-dir", type=Path, default=ROOT / "data" / "tile_features")
-    parser.add_argument("--feature-mode", choices=["bitplane-stats", "binary-xnor"], default="bitplane-stats")
+    parser.add_argument(
+        "--feature-mode",
+        choices=["bitplane-stats", "binary-xnor", "binary-xnor-hybrid"],
+        default="bitplane-stats",
+    )
     parser.add_argument("--split", choices=["train", "val"], required=True)
     parser.add_argument("--img-size", type=int, default=640)
     parser.add_argument("--max-images", type=int, default=0)
@@ -155,7 +167,12 @@ def main() -> int:
     try:
         records = read_jsonl(args.tile_dir / f"{args.split}_tiles.jsonl")
         arrays = extract_features(records, args)
-        feature_dim = BITPLANE_STATS_DIM if args.feature_mode == "bitplane-stats" else args.binary_filters
+        if args.feature_mode == "bitplane-stats":
+            feature_dim = BITPLANE_STATS_DIM
+        elif args.feature_mode == "binary-xnor-hybrid":
+            feature_dim = args.binary_filters + SPATIAL_FEATURE_DIM
+        else:
+            feature_dim = args.binary_filters
 
         metadata = {
             "feature_mode": args.feature_mode,
@@ -166,10 +183,22 @@ def main() -> int:
             "n_tiles": int(arrays["features"].shape[0]),
             "n_images": int(len(arrays["image_stems"])),
             "max_images": int(args.max_images),
-            "requires_c_kernel": args.feature_mode == "binary-xnor",
+            "requires_c_kernel": args.feature_mode.startswith("binary-xnor"),
         }
         if "binary_metadata_json" in arrays:
             metadata.update(json.loads(str(arrays["binary_metadata_json"].item())))
+        if args.feature_mode == "binary-xnor-hybrid":
+            metadata["hybrid_features"] = [
+                "binary_xnor_tile_summaries",
+                "row_norm",
+                "col_norm",
+                "center_x",
+                "center_y",
+                "abs_center_x",
+                "abs_center_y",
+                "touches_x_border",
+                "touches_y_border",
+            ]
         arrays["metadata_json"] = np.asarray(json.dumps(metadata))
 
         args.out_dir.mkdir(parents=True, exist_ok=True)

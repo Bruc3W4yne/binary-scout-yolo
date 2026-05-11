@@ -25,17 +25,24 @@ The optional --include-nonbinary check verifies that input planes with values
 from __future__ import annotations
 
 import argparse
+import random
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from argparse import Namespace
 
 import numpy as np
+import torch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from binary_layer import BinaryConvLayer  # noqa: E402
 import kernel_wrapper as kw  # noqa: E402
+from preprocess import make_tiles  # noqa: E402
+from run_yolo_tiles import build_scout_model, live_scout_scores, select_tile_records  # noqa: E402
+from scout import SPATIAL_FEATURE_DIM, BinaryXnorExtractor  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -163,6 +170,65 @@ def run_threshold_case() -> None:
         raise AssertionError("threshold_i32_to_u8 does not match NumPy thresholding")
 
 
+def run_live_binary_scout_case() -> None:
+    rng = np.random.default_rng(777)
+    rgb = rng.integers(0, 256, size=(64, 64, 3), dtype=np.uint8)
+    tiles = make_tiles(img_size=64, tile_size=32, stride=32)
+    records = [
+        {
+            "stem": "synthetic",
+            "tile": tile.xyxy(),
+            "tile_id": tile.tile_id,
+            "tile_row": tile.row,
+            "tile_col": tile.col,
+        }
+        for tile in tiles
+    ]
+
+    extractor = BinaryXnorExtractor(n_filters=6, kernel_size=3, threshold=0, seed=7)
+    features, timing = extractor.features_with_timing(rgb, tiles)
+    if features.shape != (len(tiles), 6):
+        raise AssertionError(f"bad live binary feature shape: {features.shape}")
+    if not np.isfinite(features).all():
+        raise AssertionError("live binary features contain NaN or inf")
+    for key in ("bitplanes_ms", "pack_ms", "xnor_kernel_ms", "threshold_ms", "tile_summary_ms"):
+        if key not in timing or timing[key] < 0:
+            raise AssertionError(f"bad timing key {key}: {timing}")
+
+    feature_dim = features.shape[1] + SPATIAL_FEATURE_DIM
+    model = build_scout_model(feature_dim, hidden_dim=0)
+    with torch.no_grad():
+        model.weight.fill_(0.01)
+        model.bias.zero_()
+    checkpoint = {
+        "feature_mode": "binary-xnor-hybrid",
+        "feature_dim": feature_dim,
+        "hidden_dim": 0,
+        "mean": torch.zeros((1, feature_dim), dtype=torch.float32),
+        "std": torch.ones((1, feature_dim), dtype=torch.float32),
+        "model": model.eval(),
+        "feature_metadata": extractor.metadata(),
+    }
+    scores, route_timing, route = live_scout_scores(rgb, records, checkpoint)
+    if route != "binary-xnor-hybrid":
+        raise AssertionError(f"bad live scout route: {route}")
+    if len(scores) != len(records):
+        raise AssertionError("live scout did not score every tile")
+
+    selected = select_tile_records(
+        "synthetic",
+        records,
+        Namespace(selector="binary-xnor-live", top_k=2),
+        random.Random(42),
+        scores,
+    )
+    selected_ids = [int(row["tile_id"]) for row in selected]
+    if len(selected_ids) != 2 or len(set(selected_ids)) != 2:
+        raise AssertionError(f"top-K selection must return unique tiles, got {selected_ids}")
+    if route_timing["scout_xnor_kernel_ms"] < 0 or route_timing["scout_mlp_ms"] < 0:
+        raise AssertionError(f"bad route timing: {route_timing}")
+
+
 def expect_raises(name: str, exc_type: type[Exception], fn, *args) -> None:
     try:
         fn(*args)
@@ -245,6 +311,9 @@ def main() -> int:
 
         run_threshold_case()
         print("PASS  threshold_i32_to_u8")
+
+        run_live_binary_scout_case()
+        print("PASS  live_binary_xnor_scout")
 
         run_shape_guard_case()
         print("PASS  shape_guard_errors")
