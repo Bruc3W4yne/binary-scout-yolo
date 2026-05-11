@@ -29,6 +29,12 @@ from preprocess import (  # noqa: E402
     scale_boxes_to_resized,
     selected_area_fraction,
 )
+from routing import (  # noqa: E402
+    heuristic_scores,
+    prior_from_records,
+    select_records_by_scores,
+    select_records_oracle_greedy,
+)
 from scout import SPATIAL_FEATURE_DIM, bitplane_stats_features, load_resized_rgb, spatial_tile_features  # noqa: E402
 
 
@@ -157,6 +163,7 @@ def select_tile_records(
     args: argparse.Namespace,
     rng: random.Random,
     scout_scores: dict[tuple[str, int], float] | None,
+    tile_scores: dict[int, float] | None = None,
 ) -> list[dict]:
     records = sorted(records, key=lambda item: int(item["tile_id"]))
     if args.selector == "all":
@@ -167,12 +174,20 @@ def select_tile_records(
         shuffled = records[:]
         rng.shuffle(shuffled)
         return sorted(shuffled[: args.top_k], key=lambda item: int(item["tile_id"]))
-    if args.selector == "oracle":
+    if args.selector in {"oracle", "oracle-count"}:
         ranked = sorted(
             records,
             key=lambda item: (-int(item["n_objects"]), -int(item["label"]), int(item["tile_id"])),
         )
         return sorted(ranked[: args.top_k], key=lambda item: int(item["tile_id"]))
+    if args.selector == "oracle-greedy":
+        return select_records_oracle_greedy(records, args.top_k)
+    if args.selector == "prior":
+        return select_records_by_scores(records, args.prior_scores, args.top_k)
+    if args.selector == "heuristic":
+        if tile_scores is None:
+            raise ValueError("--selector heuristic requires live tile scores")
+        return select_records_by_scores(records, tile_scores, args.top_k)
     if args.selector in {"scout", "scout-live"}:
         if scout_scores is None:
             raise ValueError(f"--selector {args.selector} requires scout scores")
@@ -270,7 +285,20 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
             scout_started = time.perf_counter()
             scout_scores = live_bitplane_scores(rgb, records, args.scout_checkpoint)
             scout_ms = (time.perf_counter() - scout_started) * 1000.0
-        selected_records = select_tile_records(stem, records, args, rng, scout_scores)
+        tile_scores = None
+        if args.selector == "heuristic":
+            scout_started = time.perf_counter()
+            tiles_for_scores = [
+                tile_from_record(record)
+                for record in sorted(records, key=lambda item: int(item["tile_id"]))
+            ]
+            scores = heuristic_scores(bitplane_stats_features(rgb, tiles_for_scores))
+            tile_scores = {
+                tile.tile_id: float(score)
+                for tile, score in zip(tiles_for_scores, scores)
+            }
+            scout_ms = (time.perf_counter() - scout_started) * 1000.0
+        selected_records = select_tile_records(stem, records, args, rng, scout_scores, tile_scores)
         detections, selected_tiles, yolo_ms, merge_ms = predict_tiles(model, rgb, selected_records, args, device)
         area_fraction = selected_area_fraction(selected_tiles, img_size=args.img_size)
 
@@ -337,7 +365,22 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tile-dir", type=Path, default=ROOT / "data" / "tile_dataset")
     parser.add_argument("--split", choices=["train", "val"], default="val")
-    parser.add_argument("--selector", choices=["full", "all", "random", "oracle", "scout", "scout-live"], default="full")
+    parser.add_argument(
+        "--selector",
+        choices=[
+            "full",
+            "all",
+            "random",
+            "prior",
+            "heuristic",
+            "oracle",
+            "oracle-count",
+            "oracle-greedy",
+            "scout",
+            "scout-live",
+        ],
+        default="full",
+    )
     parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--max-images", type=int, default=5, help="0 means all images")
     parser.add_argument("--weights", default="yolov8n.pt")
@@ -351,6 +394,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--features", type=Path, default=None)
     parser.add_argument("--checkpoint", type=Path, default=None)
+    parser.add_argument("--prior-split", choices=["train", "val"], default="train")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--save-detections", action="store_true")
     parser.add_argument("--out", type=Path, default=None)
@@ -376,6 +420,8 @@ def main() -> int:
             if args.checkpoint is None:
                 raise ValueError("--selector scout-live requires --checkpoint")
             args.scout_checkpoint = load_scout_checkpoint(args.checkpoint)
+        if args.selector == "prior":
+            args.prior_scores = prior_from_records(read_jsonl(args.tile_dir / f"{args.prior_split}_tiles.jsonl"))
 
         model = YOLO(args.weights)
         device = yolo_device_arg(args.device)
@@ -396,6 +442,7 @@ def main() -> int:
                 "merge_iou": args.merge_iou,
                 "match_iou": args.match_iou,
                 "device": str(device),
+                "prior_split": args.prior_split if args.selector == "prior" else None,
             },
             "summary": summarize(rows, args),
             "images": rows,
