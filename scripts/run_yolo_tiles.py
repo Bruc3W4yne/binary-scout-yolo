@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
@@ -35,7 +36,7 @@ from routing import (  # noqa: E402
     select_records_by_scores,
     select_records_oracle_greedy,
 )
-from scout import SPATIAL_FEATURE_DIM, bitplane_stats_features, load_resized_rgb, spatial_tile_features  # noqa: E402
+from scout import SPATIAL_FEATURE_DIM, bitplane_stats_features, spatial_tile_features  # noqa: E402
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -75,6 +76,11 @@ def yolo_device_arg(device: str):
     if device == "auto":
         return 0 if torch.cuda.is_available() else "cpu"
     return 0 if device == "cuda" else "cpu"
+
+
+def sync_cuda(device) -> None:
+    if device != "cpu" and torch.cuda.is_available():
+        torch.cuda.synchronize()
 
 
 def build_scout_model(feature_dim: int, hidden_dim: int) -> torch.nn.Module:
@@ -207,6 +213,8 @@ def select_tile_records(
 
 
 def predict_full(model, rgb: np.ndarray, args: argparse.Namespace, device) -> list[Detection]:
+    sync_cuda(device)
+    started = time.perf_counter()
     result = model.predict(
         [rgb],
         imgsz=args.detector_imgsz,
@@ -216,7 +224,9 @@ def predict_full(model, rgb: np.ndarray, args: argparse.Namespace, device) -> li
         verbose=False,
         batch=1,
     )[0]
-    return detections_from_result(result, source_tile_id=None)
+    sync_cuda(device)
+    yolo_ms = (time.perf_counter() - started) * 1000.0
+    return detections_from_result(result, source_tile_id=None), yolo_ms
 
 
 def predict_tiles(
@@ -231,6 +241,7 @@ def predict_tiles(
         return [], [], 0.0, 0.0
 
     crops = [rgb[tile.y1 : tile.y2, tile.x1 : tile.x2, :] for tile in tiles]
+    sync_cuda(device)
     yolo_started = time.perf_counter()
     results = model.predict(
         crops,
@@ -241,6 +252,7 @@ def predict_tiles(
         verbose=False,
         batch=args.batch,
     )
+    sync_cuda(device)
     yolo_ms = (time.perf_counter() - yolo_started) * 1000.0
 
     merge_started = time.perf_counter()
@@ -261,24 +273,41 @@ def load_ground_truth(first_record: dict, img_size: int):
     return scale_boxes_to_resized(boxes, tuple(first_record["orig_size"]), img_size)
 
 
-def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespace, device, rng, scout_scores):
+def load_resized_rgb_timed(path: Path, img_size: int) -> tuple[np.ndarray, float, float]:
     started = time.perf_counter()
+    with Image.open(path) as image:
+        image = image.convert("RGB")
+        image_load_ms = (time.perf_counter() - started) * 1000.0
+
+        resize_started = time.perf_counter()
+        image = image.resize((img_size, img_size), Image.LANCZOS)
+        rgb = np.asarray(image, dtype=np.uint8)
+    resize_ms = (time.perf_counter() - resize_started) * 1000.0
+    return rgb, image_load_ms, resize_ms
+
+
+def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespace, device, rng, scout_scores):
+    wall_started = time.perf_counter()
     first = records[0]
-    rgb = load_resized_rgb(resolve_path(first["image_path"]), img_size=args.img_size)
+
+    rgb, image_load_ms, resize_preprocess_ms = load_resized_rgb_timed(
+        resolve_path(first["image_path"]),
+        img_size=args.img_size,
+    )
+
+    gt_started = time.perf_counter()
     boxes = load_ground_truth(first, args.img_size)
-    load_ms = (time.perf_counter() - started) * 1000.0
+    gt_parse_ms = (time.perf_counter() - gt_started) * 1000.0
     scout_ms = 0.0
-    merge_ms = 0.0
+    merge_nms_ms = 0.0
 
     if args.selector == "full":
         selected_records: list[dict] = []
         selected_tiles: list[Tile] = []
-        yolo_started = time.perf_counter()
-        detections = predict_full(model, rgb, args, device)
-        yolo_ms = (time.perf_counter() - yolo_started) * 1000.0
+        detections, yolo_ms = predict_full(model, rgb, args, device)
         merge_started = time.perf_counter()
         detections = nms(detections, iou_threshold=args.merge_iou)
-        merge_ms = (time.perf_counter() - merge_started) * 1000.0
+        merge_nms_ms = (time.perf_counter() - merge_started) * 1000.0
         area_fraction = 1.0
     else:
         if args.selector == "scout-live":
@@ -299,11 +328,14 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
             }
             scout_ms = (time.perf_counter() - scout_started) * 1000.0
         selected_records = select_tile_records(stem, records, args, rng, scout_scores, tile_scores)
-        detections, selected_tiles, yolo_ms, merge_ms = predict_tiles(model, rgb, selected_records, args, device)
+        detections, selected_tiles, yolo_ms, merge_nms_ms = predict_tiles(model, rgb, selected_records, args, device)
         area_fraction = selected_area_fraction(selected_tiles, img_size=args.img_size)
 
-    latency_ms = (time.perf_counter() - started) * 1000.0
+    match_started = time.perf_counter()
     recall = match_recall(detections, boxes, iou_threshold=args.match_iou)
+    match_eval_ms = (time.perf_counter() - match_started) * 1000.0
+    wall_ms = (time.perf_counter() - wall_started) * 1000.0
+    pipeline_ms = image_load_ms + resize_preprocess_ms + scout_ms + yolo_ms + merge_nms_ms
     row = {
         "stem": stem,
         "selector": args.selector,
@@ -312,11 +344,18 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
         "selected_tile_ids": [tile.tile_id for tile in selected_tiles],
         "selected_area_fraction": area_fraction,
         "detections": len(detections),
-        "latency_ms": latency_ms,
-        "load_ms": load_ms,
+        "latency_ms": pipeline_ms,
+        "image_load_ms": image_load_ms,
+        "resize_preprocess_ms": resize_preprocess_ms,
+        "gt_parse_ms": gt_parse_ms,
         "scout_ms": scout_ms,
         "yolo_ms": yolo_ms,
-        "merge_ms": merge_ms,
+        "merge_nms_ms": merge_nms_ms,
+        "match_eval_ms": match_eval_ms,
+        "pipeline_ms_excl_gt": pipeline_ms,
+        "wall_ms": wall_ms,
+        "load_ms": image_load_ms + resize_preprocess_ms + gt_parse_ms,
+        "merge_ms": merge_nms_ms,
         **recall,
     }
     if args.save_detections:
@@ -331,10 +370,31 @@ def percentile(values: list[float], p: float) -> float:
     return float(np.percentile(arr, p))
 
 
+def summarize_ms(rows: list[dict], key: str) -> dict:
+    values = [float(row[key]) for row in rows]
+    return {
+        "mean": float(np.mean(values)) if values else 0.0,
+        "p50": percentile(values, 50),
+        "p95": percentile(values, 95),
+        "min": min(values) if values else 0.0,
+        "max": max(values) if values else 0.0,
+    }
+
+
 def summarize(rows: list[dict], args: argparse.Namespace) -> dict:
-    latencies = [float(row["latency_ms"]) for row in rows]
     gt_total = sum(int(row["gt_boxes"]) for row in rows)
     matched_total = sum(int(row["matched_gt"]) for row in rows)
+    phase_names = [
+        "image_load_ms",
+        "resize_preprocess_ms",
+        "gt_parse_ms",
+        "scout_ms",
+        "yolo_ms",
+        "merge_nms_ms",
+        "match_eval_ms",
+        "pipeline_ms_excl_gt",
+        "wall_ms",
+    ]
     return {
         "selector": args.selector,
         "top_k": None if args.selector in {"full", "all"} else args.top_k,
@@ -347,17 +407,8 @@ def summarize(rows: list[dict], args: argparse.Namespace) -> dict:
         "mean_selected_area_fraction": (
             float(np.mean([row["selected_area_fraction"] for row in rows])) if rows else 0.0
         ),
-        "latency_ms": {
-            "mean": float(np.mean(latencies)) if latencies else 0.0,
-            "p50": percentile(latencies, 50),
-            "p95": percentile(latencies, 95),
-            "min": min(latencies) if latencies else 0.0,
-            "max": max(latencies) if latencies else 0.0,
-        },
-        "phase_ms": {
-            name: float(np.mean([row[name] for row in rows])) if rows else 0.0
-            for name in ["load_ms", "scout_ms", "yolo_ms", "merge_ms"]
-        },
+        "latency_ms": summarize_ms(rows, "latency_ms"),
+        "phase_ms": {name: summarize_ms(rows, name) for name in phase_names},
     }
 
 
@@ -395,6 +446,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--features", type=Path, default=None)
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--prior-split", choices=["train", "val"], default="train")
+    parser.add_argument("--warmup-images", type=int, default=1, help="YOLO warmup images to run before measured rows")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--save-detections", action="store_true")
     parser.add_argument("--out", type=Path, default=None)
@@ -425,6 +477,13 @@ def main() -> int:
 
         model = YOLO(args.weights)
         device = yolo_device_arg(args.device)
+        if args.warmup_images < 0:
+            raise ValueError("--warmup-images must be nonnegative")
+        if args.warmup_images:
+            warmup_rng = random.Random(args.seed)
+            for stem, image_records in list(groups.items())[: args.warmup_images]:
+                run_one_image(model, stem, image_records, args, device, warmup_rng, scout_scores)
+
         rng = random.Random(args.seed)
         rows = [
             run_one_image(model, stem, image_records, args, device, rng, scout_scores)
@@ -443,6 +502,10 @@ def main() -> int:
                 "match_iou": args.match_iou,
                 "device": str(device),
                 "prior_split": args.prior_split if args.selector == "prior" else None,
+                "warmup_images": args.warmup_images,
+                "features": str(args.features) if args.features else None,
+                "checkpoint": str(args.checkpoint) if args.checkpoint else None,
+                "command": "python " + " ".join(sys.argv),
             },
             "summary": summarize(rows, args),
             "images": rows,

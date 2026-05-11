@@ -4,14 +4,17 @@ Verify detector utility contracts without loading YOLO.
 
 from __future__ import annotations
 
-import sys
+from argparse import Namespace
 from pathlib import Path
+import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from detector import Detection, box_iou, match_recall, nms, offset_detection  # noqa: E402
 from preprocess import Box, Tile  # noqa: E402
+from run_yolo_tiles import summarize  # noqa: E402
 
 
 def expect(condition: bool, message: str) -> None:
@@ -52,6 +55,45 @@ def verify_match_recall() -> None:
     expect(result["recall"] == 0.5, "unexpected recall")
 
 
+def verify_yolo_timing_summary() -> None:
+    phases = {
+        "image_load_ms": 1.0,
+        "resize_preprocess_ms": 2.0,
+        "gt_parse_ms": 3.0,
+        "scout_ms": 4.0,
+        "yolo_ms": 5.0,
+        "merge_nms_ms": 6.0,
+        "match_eval_ms": 7.0,
+        "pipeline_ms_excl_gt": 18.0,
+        "wall_ms": 28.0,
+    }
+    rows = [
+        {
+            "selected_tiles": 8,
+            "selected_area_fraction": 0.25,
+            "detections": 2,
+            "gt_boxes": 2,
+            "matched_gt": 1,
+            "latency_ms": 18.0,
+            **phases,
+        },
+        {
+            "selected_tiles": 8,
+            "selected_area_fraction": 0.50,
+            "detections": 4,
+            "gt_boxes": 2,
+            "matched_gt": 2,
+            "latency_ms": 20.0,
+            **{key: value + 2.0 for key, value in phases.items()},
+        },
+    ]
+    summary = summarize(rows, Namespace(selector="scout", top_k=8))
+    expect(summary["class_agnostic_recall"] == 0.75, "summary recall should aggregate counts")
+    expect(summary["latency_ms"]["mean"] == 19.0, "latency mean should use pipeline latency")
+    expect(summary["phase_ms"]["pipeline_ms_excl_gt"]["mean"] == 19.0, "pipeline phase mean mismatch")
+    expect(summary["phase_ms"]["gt_parse_ms"]["mean"] == 4.0, "GT parse phase mean mismatch")
+
+
 def main() -> int:
     try:
         verify_iou_and_nms()
@@ -60,6 +102,8 @@ def main() -> int:
         print("PASS  tile_offset_and_clip")
         verify_match_recall()
         print("PASS  match_recall")
+        verify_yolo_timing_summary()
+        print("PASS  yolo_timing_summary")
     except Exception as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
