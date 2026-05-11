@@ -85,7 +85,7 @@ python scripts\verify_packed_kernel.py --include-nonbinary
 python scripts\verify_tile_contracts.py
 python scripts\verify_detector_utils.py
 python scripts\verify_tile_grid.py
-python scripts\benchmark_packed.py --help
+python scripts\benchmark_xnor_kernel.py --help
 ```
 
 On macOS or Linux, use `make clean && make && make test` instead of `mingw32-make`.
@@ -110,7 +110,7 @@ Record:
 Gate 0:
 
 ```text
-Do not edit broadly until current breakage is known. Confirm or disprove the benchmark_packed.py --help failure.
+Do not edit broadly until current breakage is known. Confirm or disprove native build and benchmark CLI failures.
 ```
 
 Known local caveat: on this Mac, `python3` works while `python` may not exist. Also, `make test` was observed hanging locally after building, while Pro reported it passed in its isolated review. Treat that as a real discrepancy to investigate, not as a solved issue.
@@ -243,9 +243,9 @@ Keep the C/Python boundary narrow:
 - The wrapper validates dtype, shape, contiguity, and library availability.
 - Higher-level code does not touch `ctypes`.
 
-Fix or replace `scripts/benchmark_packed.py`:
+Fix or replace the packed-kernel benchmark:
 
-- Prefer rename to `scripts/benchmark_xnor_kernel.py`.
+- Prefer `scripts/benchmark_xnor_kernel.py`.
 - `--help` works without data.
 - Synthetic mode works.
 - JSON output works.
