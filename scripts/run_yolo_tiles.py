@@ -23,7 +23,14 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from detector import Detection, match_recall, nms, offset_detection  # noqa: E402
+from detector import (  # noqa: E402
+    Detection,
+    match_recall,
+    nms,
+    offset_detection,
+    project_detection_from_original_crop,
+    tile_to_original_crop,
+)
 from preprocess import (  # noqa: E402
     Tile,
     parse_visdrone_annotations,
@@ -232,6 +239,7 @@ def predict_full(model, rgb: np.ndarray, args: argparse.Namespace, device) -> li
 def predict_tiles(
     model,
     rgb: np.ndarray,
+    original_rgb: np.ndarray | None,
     selected_records: list[dict],
     args: argparse.Namespace,
     device,
@@ -240,7 +248,16 @@ def predict_tiles(
     if not tiles:
         return [], [], 0.0, 0.0
 
-    crops = [rgb[tile.y1 : tile.y2, tile.x1 : tile.x2, :] for tile in tiles]
+    orig_size = tuple(selected_records[0]["orig_size"])
+    if args.crop_source == "original":
+        if original_rgb is None:
+            raise ValueError("--crop-source original requires the original RGB image")
+        crop_boxes = [tile_to_original_crop(tile, orig_size, args.img_size) for tile in tiles]
+        crops = [original_rgb[y1:y2, x1:x2, :] for x1, y1, x2, y2 in crop_boxes]
+    else:
+        crop_boxes = [None for _ in tiles]
+        crops = [rgb[tile.y1 : tile.y2, tile.x1 : tile.x2, :] for tile in tiles]
+
     sync_cuda(device)
     yolo_started = time.perf_counter()
     results = model.predict(
@@ -257,9 +274,18 @@ def predict_tiles(
 
     merge_started = time.perf_counter()
     detections: list[Detection] = []
-    for tile, result in zip(tiles, results):
+    for tile, crop_box, result in zip(tiles, crop_boxes, results):
         for det in detections_from_result(result, source_tile_id=tile.tile_id):
-            shifted = offset_detection(det, tile, args.img_size)
+            if crop_box is None:
+                shifted = offset_detection(det, tile, args.img_size)
+            else:
+                shifted = project_detection_from_original_crop(
+                    det,
+                    crop_box,
+                    orig_size,
+                    args.img_size,
+                    tile.tile_id,
+                )
             if shifted is not None:
                 detections.append(shifted)
     merged = nms(detections, iou_threshold=args.merge_iou)
@@ -273,26 +299,28 @@ def load_ground_truth(first_record: dict, img_size: int):
     return scale_boxes_to_resized(boxes, tuple(first_record["orig_size"]), img_size)
 
 
-def load_resized_rgb_timed(path: Path, img_size: int) -> tuple[np.ndarray, float, float]:
+def load_rgb_timed(path: Path, img_size: int, keep_original: bool) -> tuple[np.ndarray, np.ndarray | None, float, float]:
     started = time.perf_counter()
     with Image.open(path) as image:
         image = image.convert("RGB")
+        original_rgb = np.asarray(image, dtype=np.uint8) if keep_original else None
         image_load_ms = (time.perf_counter() - started) * 1000.0
 
         resize_started = time.perf_counter()
         image = image.resize((img_size, img_size), Image.LANCZOS)
         rgb = np.asarray(image, dtype=np.uint8)
     resize_ms = (time.perf_counter() - resize_started) * 1000.0
-    return rgb, image_load_ms, resize_ms
+    return rgb, original_rgb, image_load_ms, resize_ms
 
 
 def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespace, device, rng, scout_scores):
     wall_started = time.perf_counter()
     first = records[0]
 
-    rgb, image_load_ms, resize_preprocess_ms = load_resized_rgb_timed(
+    rgb, original_rgb, image_load_ms, resize_preprocess_ms = load_rgb_timed(
         resolve_path(first["image_path"]),
         img_size=args.img_size,
+        keep_original=args.crop_source == "original" and args.selector != "full",
     )
 
     gt_started = time.perf_counter()
@@ -329,18 +357,32 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
             }
             scout_ms = (time.perf_counter() - scout_started) * 1000.0
         selected_records = select_tile_records(stem, records, args, rng, scout_scores, tile_scores)
-        detections, selected_tiles, yolo_ms, merge_nms_ms = predict_tiles(model, rgb, selected_records, args, device)
+        detections, selected_tiles, yolo_ms, merge_nms_ms = predict_tiles(
+            model,
+            rgb,
+            original_rgb,
+            selected_records,
+            args,
+            device,
+        )
         detector_calls = len(selected_tiles)
         area_fraction = selected_area_fraction(selected_tiles, img_size=args.img_size)
 
     match_started = time.perf_counter()
-    recall = match_recall(detections, boxes, iou_threshold=args.match_iou)
+    recall = match_recall(
+        detections,
+        boxes,
+        iou_threshold=args.match_iou,
+        small_area=args.small_area,
+        medium_area=args.medium_area,
+    )
     match_eval_ms = (time.perf_counter() - match_started) * 1000.0
     wall_ms = (time.perf_counter() - wall_started) * 1000.0
     pipeline_ms = image_load_ms + resize_preprocess_ms + scout_ms + yolo_ms + merge_nms_ms
     row = {
         "stem": stem,
         "selector": args.selector,
+        "crop_source": args.crop_source,
         "top_k": None if args.selector in {"full", "all"} else args.top_k,
         "selected_tiles": len(selected_tiles),
         "selected_tile_ids": [tile.tile_id for tile in selected_tiles],
@@ -384,6 +426,16 @@ def summarize_ms(rows: list[dict], key: str) -> dict:
     }
 
 
+def bucket_summary(rows: list[dict], name: str) -> dict:
+    gt = sum(int(row.get(f"{name}_gt_boxes", 0)) for row in rows)
+    matched = sum(int(row.get(f"{name}_matched_gt", 0)) for row in rows)
+    return {
+        "gt_boxes": gt,
+        "matched_gt": matched,
+        "object_recall": matched / gt if gt else 0.0,
+    }
+
+
 def summarize(rows: list[dict], args: argparse.Namespace) -> dict:
     gt_total = sum(int(row["gt_boxes"]) for row in rows)
     matched_total = sum(int(row["matched_gt"]) for row in rows)
@@ -400,11 +452,17 @@ def summarize(rows: list[dict], args: argparse.Namespace) -> dict:
     ]
     return {
         "selector": args.selector,
+        "crop_source": args.crop_source,
         "top_k": None if args.selector in {"full", "all"} else args.top_k,
         "images": len(rows),
         "gt_boxes": gt_total,
         "matched_gt": matched_total,
         "class_agnostic_recall": matched_total / gt_total if gt_total else 0.0,
+        **{
+            f"{name}_{field}": value
+            for name in ("small", "medium", "large")
+            for field, value in bucket_summary(rows, name).items()
+        },
         "mean_detections": float(np.mean([row["detections"] for row in rows])) if rows else 0.0,
         "mean_detector_calls": float(np.mean([row["detector_calls"] for row in rows])) if rows else 0.0,
         "mean_selected_tiles": float(np.mean([row["selected_tiles"] for row in rows])) if rows else 0.0,
@@ -440,11 +498,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-images", type=int, default=5, help="0 means all images")
     parser.add_argument("--weights", default="yolov8n.pt")
     parser.add_argument("--img-size", type=int, default=640)
+    parser.add_argument(
+        "--crop-source",
+        choices=["resized", "original"],
+        default="resized",
+        help="crop tiled detector inputs from the resized canvas or the original image",
+    )
     parser.add_argument("--detector-imgsz", type=int, default=640)
     parser.add_argument("--conf", type=float, default=0.25)
     parser.add_argument("--yolo-iou", type=float, default=0.7)
     parser.add_argument("--merge-iou", type=float, default=0.5)
     parser.add_argument("--match-iou", type=float, default=0.5)
+    parser.add_argument("--small-area", type=float, default=32.0 * 32.0)
+    parser.add_argument("--medium-area", type=float, default=96.0 * 96.0)
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--features", type=Path, default=None)
@@ -498,12 +564,15 @@ def main() -> int:
                 "weights": args.weights,
                 "split": args.split,
                 "selector": args.selector,
+                "crop_source": args.crop_source,
                 "top_k": args.top_k,
                 "max_images": args.max_images,
                 "conf": args.conf,
                 "yolo_iou": args.yolo_iou,
                 "merge_iou": args.merge_iou,
                 "match_iou": args.match_iou,
+                "small_area": args.small_area,
+                "medium_area": args.medium_area,
                 "device": str(device),
                 "prior_split": args.prior_split if args.selector == "prior" else None,
                 "warmup_images": args.warmup_images,
@@ -519,7 +588,8 @@ def main() -> int:
         if out is None:
             limit = f"_n{args.max_images}" if args.max_images else ""
             topk = f"_k{args.top_k}" if args.selector not in {"full", "all"} else ""
-            out = ROOT / "data" / f"results_yolo_{args.selector}{topk}_{args.split}{limit}.json"
+            crop = "_original" if args.crop_source == "original" else ""
+            out = ROOT / "data" / f"results_yolo_{args.selector}{topk}{crop}_{args.split}{limit}.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(result, indent=2) + "\n")
 

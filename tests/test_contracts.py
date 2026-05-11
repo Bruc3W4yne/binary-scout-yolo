@@ -33,7 +33,10 @@ def test_detector_contracts() -> None:
 
     checks.verify_iou_and_nms()
     checks.verify_tile_offset_and_clip()
+    checks.verify_original_crop_mapping()
+    checks.verify_original_crop_predict_path()
     checks.verify_match_recall()
+    checks.verify_size_bucket_recall()
     checks.verify_yolo_timing_summary()
 
 

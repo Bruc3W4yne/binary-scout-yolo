@@ -8,7 +8,7 @@ The pipeline goal is:
 UAV image -> binary/XNOR scout tile scores -> top-K tiles -> YOLO on selected crops -> merged detections
 ```
 
-The current repo implements the verified binary core, VisDrone tile dataset generation, C-free and binary-XNOR scout features, scout recall evaluation, and YOLO selected-tile routing.
+The current repo implements the verified binary core, VisDrone tile dataset generation, C-free and binary-XNOR scout features, scout recall evaluation, and YOLO selected-tile routing. Tiled detector runs can now use `--crop-source original` so the scout selects on the 640x640 grid while YOLO runs on original-resolution crops.
 
 See `docs/current_results.md` for the latest Windows RTX 4090 smoke results and caveats. See `docs/final_project_claims.md` for the defensible novelty/claim framing, `docs/evaluation_protocol.md` for longer benchmark commands, `docs/binary_xnor_core.md` for the native binary core, and `docs/completion_audit.md` for the current phase-gate handoff.
 
@@ -83,22 +83,31 @@ python scripts\verify_tile_features.py --feature-file data\tile_features\binary_
 
 Remove `--max-images` when ready for the full split.
 
+Train and evaluate a cached binary-XNOR scout comparison:
+
+```powershell
+python scripts\extract_tile_features.py --feature-mode binary-xnor --split train
+python scripts\extract_tile_features.py --feature-mode binary-xnor --split val
+python scripts\train_scout.py --train-features data\tile_features\binary_xnor_train.npz --val-features data\tile_features\binary_xnor_val.npz --out-dir runs\scout_binary_xnor_mlp --hidden-dim 64 --epochs 30 --device cuda
+python scripts\evaluate_scout_recall.py --features data\tile_features\binary_xnor_val.npz --checkpoint runs\scout_binary_xnor_mlp\scout_binary_xnor.pt --mode scout --top-k-values 4 8 12 16 20
+```
+
 Run detector/router smoke checks:
 
 ```powershell
 python scripts\run_yolo_tiles.py --selector full --split val --max-images 2 --device cuda
-python scripts\run_yolo_tiles.py --selector all --split val --max-images 2 --device cuda
-python scripts\run_yolo_tiles.py --selector random --top-k 8 --split val --max-images 2 --device cuda
-python scripts\run_yolo_tiles.py --selector prior --top-k 8 --split val --max-images 2 --device cuda
-python scripts\run_yolo_tiles.py --selector heuristic --top-k 8 --split val --max-images 2 --device cuda
-python scripts\run_yolo_tiles.py --selector oracle-greedy --top-k 8 --split val --max-images 2 --device cuda
-python scripts\run_yolo_tiles.py --selector scout --top-k 8 --split val --max-images 2 --device cuda --features data\tile_features\bitplane_stats_spatial_val.npz --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt
-python scripts\run_yolo_tiles.py --selector scout-live --top-k 8 --split val --max-images 2 --device cuda --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt
+python scripts\run_yolo_tiles.py --selector all --crop-source original --split val --max-images 2 --device cuda
+python scripts\run_yolo_tiles.py --selector random --crop-source original --top-k 8 --split val --max-images 2 --device cuda
+python scripts\run_yolo_tiles.py --selector prior --crop-source original --top-k 8 --split val --max-images 2 --device cuda
+python scripts\run_yolo_tiles.py --selector heuristic --crop-source original --top-k 8 --split val --max-images 2 --device cuda
+python scripts\run_yolo_tiles.py --selector oracle-greedy --crop-source original --top-k 8 --split val --max-images 2 --device cuda
+python scripts\run_yolo_tiles.py --selector scout --crop-source original --top-k 8 --split val --max-images 2 --device cuda --features data\tile_features\bitplane_stats_spatial_val.npz --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt
+python scripts\run_yolo_tiles.py --selector scout-live --crop-source original --top-k 8 --split val --max-images 2 --device cuda --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt
 ```
 
-`scout` uses cached tile scores to isolate detector routing. `scout-live` computes bitplane scout features inside the timed path and reports phase timings. `prior`, `heuristic`, and `oracle-greedy` are baselines that keep the scout claim honest. These detector numbers are a pipeline smoke signal, not final VisDrone accuracy: `yolov8n.pt` is COCO-pretrained unless you later fine-tune or replace the weights.
+`scout` uses cached tile scores to isolate detector routing. `scout-live` computes bitplane scout features inside the timed path and reports phase timings. `prior`, `heuristic`, and `oracle-greedy` are baselines that keep the scout claim honest. Use `--crop-source original` for the high-resolution tiling claim; the default `resized` mode is retained as a control. These detector numbers are a pipeline smoke signal, not final VisDrone accuracy: `yolov8n.pt` is COCO-pretrained unless you later fine-tune or replace the weights.
 
-`run_yolo_tiles.py` uses one warmup image by default and prints pipeline latency excluding ground-truth parsing. The JSON output also includes detector input counts, image-load, resize, ground-truth, scout, YOLO, merge/NMS, match/eval, pipeline, and wall-clock timing summaries. `detector_calls` means detector inputs/crops evaluated, not Python `model.predict()` calls.
+`run_yolo_tiles.py` uses one warmup image by default and prints pipeline latency excluding ground-truth parsing. The JSON output also includes detector input counts, small/medium/large object recall, image-load, resize, ground-truth, scout, YOLO, merge/NMS, match/eval, pipeline, and wall-clock timing summaries. `detector_calls` means detector inputs/crops evaluated, not Python `model.predict()` calls.
 
 ## Data Contract
 
@@ -112,6 +121,8 @@ tile starts: 0, 80, 160, 240, 320, 400, 480
 tiles per image: 49
 positive tile: center of at least one valid VisDrone box lies inside tile
 ```
+
+The detector can either crop selected tiles from the resized 640x640 canvas or map those selected tile boxes back to original image coordinates with `--crop-source original`.
 
 VisDrone valid object categories are original `category_id` 1 through 10, stored as zero-based `class_id` 0 through 9. Ignored regions and category 11 are skipped.
 

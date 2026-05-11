@@ -5,8 +5,7 @@ Small detection utilities shared by YOLO routing scripts.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-
-import numpy as np
+from math import ceil, floor
 
 from preprocess import Box, Tile
 
@@ -51,6 +50,52 @@ def offset_detection(det: Detection, tile: Tile, img_size: int) -> Detection | N
     return clip_detection(shifted, img_size)
 
 
+def tile_to_original_crop(tile: Tile, orig_size: tuple[int, int], img_size: int) -> tuple[int, int, int, int]:
+    orig_w, orig_h = orig_size
+    if orig_w < 1 or orig_h < 1:
+        raise ValueError(f"original image size must be positive, got {orig_size}")
+    if img_size < 1:
+        raise ValueError(f"img_size must be positive, got {img_size}")
+
+    sx = orig_w / img_size
+    sy = orig_h / img_size
+    x1 = max(0, min(orig_w, floor(tile.x1 * sx)))
+    y1 = max(0, min(orig_h, floor(tile.y1 * sy)))
+    x2 = max(0, min(orig_w, ceil(tile.x2 * sx)))
+    y2 = max(0, min(orig_h, ceil(tile.y2 * sy)))
+    if x2 <= x1 or y2 <= y1:
+        raise ValueError(f"tile maps to an empty original crop: tile={tile.xyxy()} orig_size={orig_size}")
+    return x1, y1, x2, y2
+
+
+def project_detection_from_original_crop(
+    det: Detection,
+    crop_xyxy: tuple[int, int, int, int],
+    orig_size: tuple[int, int],
+    img_size: int,
+    source_tile_id: int | None,
+) -> Detection | None:
+    orig_w, orig_h = orig_size
+    if orig_w < 1 or orig_h < 1:
+        raise ValueError(f"original image size must be positive, got {orig_size}")
+    if img_size < 1:
+        raise ValueError(f"img_size must be positive, got {img_size}")
+
+    crop_x1, crop_y1, _, _ = crop_xyxy
+    sx = img_size / orig_w
+    sy = img_size / orig_h
+    projected = Detection(
+        x1=(det.x1 + crop_x1) * sx,
+        y1=(det.y1 + crop_y1) * sy,
+        x2=(det.x2 + crop_x1) * sx,
+        y2=(det.y2 + crop_y1) * sy,
+        score=det.score,
+        class_id=det.class_id,
+        source_tile_id=source_tile_id,
+    )
+    return clip_detection(projected, img_size)
+
+
 def box_iou(a: list[float], b: list[float]) -> float:
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
@@ -77,7 +122,17 @@ def nms(detections: list[Detection], iou_threshold: float = 0.5) -> list[Detecti
     return kept
 
 
-def match_recall(detections: list[Detection], boxes: list[Box], iou_threshold: float = 0.5) -> dict:
+def box_area(box: Box) -> float:
+    return max(box.x2 - box.x1, 0.0) * max(box.y2 - box.y1, 0.0)
+
+
+def match_recall(
+    detections: list[Detection],
+    boxes: list[Box],
+    iou_threshold: float = 0.5,
+    small_area: float = 32.0 * 32.0,
+    medium_area: float = 96.0 * 96.0,
+) -> dict:
     matched: set[int] = set()
     for det in sorted(detections, key=lambda item: item.score, reverse=True):
         best_idx = None
@@ -93,8 +148,22 @@ def match_recall(detections: list[Detection], boxes: list[Box], iou_threshold: f
             matched.add(best_idx)
 
     total = len(boxes)
-    return {
+    result = {
         "gt_boxes": total,
         "matched_gt": len(matched),
         "recall": len(matched) / total if total else 0.0,
     }
+
+    buckets = {
+        "small": [idx for idx, box in enumerate(boxes) if box_area(box) < small_area],
+        "medium": [idx for idx, box in enumerate(boxes) if small_area <= box_area(box) < medium_area],
+        "large": [idx for idx, box in enumerate(boxes) if box_area(box) >= medium_area],
+    }
+    for name, indices in buckets.items():
+        count = len(indices)
+        matched_count = sum(1 for idx in indices if idx in matched)
+        result[f"{name}_gt_boxes"] = count
+        result[f"{name}_matched_gt"] = matched_count
+        result[f"{name}_object_recall"] = matched_count / count if count else 0.0
+
+    return result

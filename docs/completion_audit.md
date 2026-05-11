@@ -4,6 +4,8 @@ Generated May 11, 2026 after the Windows-first final verification pass.
 
 This is the handoff truth for the current repo. The project is not a finished research paper, but it is a runnable CLI implementation of the selective-tiling pipeline with documented Windows/CUDA smoke evidence and clear limits.
 
+Post-audit source note: a later alignment pass added `--crop-source original` for tiled YOLO and small/medium/large recall fields. The Windows numbers below predate that pass, so use them as wiring evidence only. Final report numbers should be rerun from the current source.
+
 ## Final Status
 
 The implemented path is:
@@ -14,7 +16,7 @@ VisDrone image
 -> tile occupancy labels
 -> scout features or live scout scoring
 -> top-K tile routing
--> YOLO on selected crops
+-> YOLO on selected resized or original-resolution crops
 -> coordinate merge/NMS
 -> JSON recall, selection, detector-call, and timing metrics
 ```
@@ -25,7 +27,7 @@ The strongest current claim is:
 On full-val tile-label evaluation, the spatial bitplane MLP scout covers 0.516 of object centers at K=8. That beats 5-trial random K=8 at 0.452 +/- 0.004, train-split spatial prior at 0.469, and content heuristic at 0.447, while greedy-oracle K=8 shows headroom at 0.953.
 ```
 
-Do not claim that this beats YOLO overall, is state of the art, is already drone-real-time, or that the binary-XNOR path is the fastest live scout. The binary path is currently a verified C/OpenMP XNOR-popcount scout feature implementation.
+Do not claim that this beats YOLO overall, is state of the art, is already drone-real-time, that historical YOLO rows prove original-resolution tiling, or that the binary-XNOR path is the fastest live scout. The binary path is currently a verified C/OpenMP XNOR-popcount scout feature implementation.
 
 ## Acceptance Evidence
 
@@ -140,8 +142,9 @@ The largest file is `src/kernel.c`, because the native C test harness lives besi
 
 These are not blockers for the implementation handoff:
 
-1. Run larger YOLO sweeps, especially K=4, 8, 12, 16, and 20 over more validation images.
-2. Decide whether the final report needs class-aware VisDrone mAP. If yes, use VisDrone-compatible YOLO weights or fine-tune.
-3. Rerun live scout timing on Windows after the source-only feature-extraction fast path.
+1. Rerun YOLO sweeps with `--crop-source original`, especially K=4, 8, 12, 16, and 20 over the same validation subset.
+2. Confirm all-tile original crops improve recall over full-image YOLO before making the high-resolution tiling claim.
+3. Rerun live scout timing on Windows from the current source.
 4. Train and evaluate full binary-XNOR scout caches if the presentation needs the binary path as a measured scout result, not only a verified feature path.
-5. Use `docs/final_project_claims.md` as the claim boundary when writing slides/report.
+5. Decide whether the final report needs class-aware VisDrone mAP. If yes, use VisDrone-compatible YOLO weights or fine-tune.
+6. Use `docs/final_project_claims.md` as the claim boundary when writing slides/report.

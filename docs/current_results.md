@@ -6,7 +6,7 @@ These are not final paper-quality numbers. They are pipeline validation numbers 
 
 For the exact commands verified in the final handoff pass, see `docs/completion_audit.md`.
 
-After that handoff, the current source added `detector_calls` to YOLO JSON output and an equivalent default-grid fast path for live bitplane feature extraction. Do not claim updated Windows latency until `scout-live` is rerun on the Windows RTX 4090 machine.
+After that handoff, the current source added `detector_calls`, an equivalent default-grid fast path for live bitplane feature extraction, original-resolution tiled detector crops via `--crop-source original`, and small/medium/large recall fields. Do not claim updated Windows latency or high-resolution crop results until the current source is rerun on the Windows RTX 4090 machine.
 
 ## Artifacts Verified
 
@@ -72,6 +72,8 @@ The spatial MLP scout is better than random, a simple train-split spatial prior,
 
 Class-agnostic recall against VisDrone boxes with COCO-pretrained `yolov8n.pt`.
 
+These historical YOLO rows used the older resized-canvas crop path. They prove selector wiring, not the final high-resolution tiling claim.
+
 | Method | Images | Tiles | Area | Recall | Mean Latency |
 |---|---:|---:|---:|---:|---:|
 | Full-image YOLO | 25 | 0 | 1.000 | 0.102 | 28.2 ms |
@@ -108,6 +110,8 @@ One-image CUDA smoke from clean exported commit `3e633d3`, used only to prove th
 This one-image YOLO table is a smoke test, not a performance claim. It confirms that `full`, `all`, `random`, `prior`, `heuristic`, `oracle-greedy`, cached `scout`, and `scout-live` all run on Windows/CUDA and write JSON metrics.
 
 These historical JSON files predate the `detector_calls` field. With the current CLI, detector calls are 1 for `full`, 49 for `all`, and the selected crop count for routed selectors.
+
+They also predate `--crop-source original` and small/medium/large recall fields. Final report numbers should come from the current CLI.
 
 ## Historical Timing Schema Smoke
 
@@ -158,8 +162,7 @@ The historical live scout timing showed that feature extraction was the main opt
 
 ## Next Best Improvements
 
-1. Rerun `scout-live` on Windows after the source-only feature-extraction fast path and record the updated timing.
-2. Improve the current lightweight scout with better feature extraction or calibration before adding new model families.
-3. Add K sweeps for routed YOLO beyond K=8.
-4. Run all-tile YOLO on a larger subset for a better SAHI-like cost/recall reference.
-5. Decide whether YOLO must be fine-tuned on VisDrone for class-aware mAP, or whether class-agnostic smoke recall is enough for the school scope.
+1. Rerun the YOLO selector table with `--crop-source original` on the same validation subset.
+2. Compare `full`, `all`, random, prior, heuristic, oracle-greedy, cached scout, and live scout with the same image count and K values.
+3. Train/evaluate binary-XNOR scout features if the final report title or presentation says binary scout.
+4. Decide whether YOLO must be fine-tuned on VisDrone for class-aware mAP, or whether class-agnostic and small-object recall are enough for the school scope.
