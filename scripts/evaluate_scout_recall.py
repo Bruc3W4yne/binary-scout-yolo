@@ -80,6 +80,17 @@ def feature_img_size(feature_data: dict[str, np.ndarray]) -> int:
         return 640
 
 
+def feature_artifact_name(feature_data: dict[str, np.ndarray], fallback: str) -> str:
+    if "metadata_json" in feature_data:
+        raw = feature_data["metadata_json"]
+        text = raw.item() if hasattr(raw, "item") else raw
+        try:
+            fallback = str(json.loads(str(text)).get("feature_mode", fallback))
+        except Exception:
+            pass
+    return fallback.replace("-", "_").replace("/", "_")
+
+
 def evaluate_topk(
     feature_data: dict[str, np.ndarray],
     scores: np.ndarray | None,
@@ -243,7 +254,7 @@ def main() -> int:
 
         out = args.out
         if out is None:
-            name = "bitplane_stats" if args.mode == "scout" else args.mode.replace("-", "_")
+            name = feature_artifact_name(data, "scout") if args.mode == "scout" else args.mode.replace("-", "_")
             out = ROOT / "data" / f"results_scout_recall_{name}.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(results, indent=2) + "\n")

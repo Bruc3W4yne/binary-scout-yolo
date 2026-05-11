@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from evaluate_scout_recall import evaluate_topk  # noqa: E402
+from evaluate_scout_recall import evaluate_topk, feature_artifact_name  # noqa: E402
 from routing import (  # noqa: E402
     feature_groups,
     heuristic_scores,
@@ -100,6 +100,12 @@ def verify_selected_area() -> None:
     expect(0.09 < area < 0.10, f"unexpected selected area fraction: {area}")
 
 
+def verify_feature_artifact_name() -> None:
+    data = {"metadata_json": np.asarray('{"feature_mode": "binary-xnor"}')}
+    expect(feature_artifact_name(data, "scout") == "binary_xnor", "feature artifact name should use metadata")
+    expect(feature_artifact_name({}, "oracle-greedy") == "oracle_greedy", "fallback artifact name mismatch")
+
+
 def main() -> int:
     checks = [
         ("feature_grouping_and_boxes", verify_feature_grouping_and_boxes),
@@ -107,6 +113,7 @@ def main() -> int:
         ("oracle_greedy", verify_oracle_greedy),
         ("recall_evaluation", verify_recall_evaluation),
         ("selected_area", verify_selected_area),
+        ("feature_artifact_name", verify_feature_artifact_name),
     ]
     print("=== verify_routing.py ===")
     try:
