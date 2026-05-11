@@ -28,6 +28,28 @@ Generated for the final cleanup goal. This is an evidence ledger, not a final co
 | `python3 scripts/evaluate_scout_recall.py --features data/tile_features/missing.npz --top-k-values 8` | Blocked clearly | Reports missing feature file. |
 | `python3 scripts/run_yolo_tiles.py --selector full --split val --max-images 1` | Blocked clearly | Reports missing `ultralytics` in this Mac environment. Windows/4090 is the target for detector smoke. |
 
+## Windows Clean-Copy Verification
+
+Verified through SSH on `DESKTOP-JV3PK9G` using an exported clean tree from commit `dce07fc` at:
+
+```text
+C:\Users\Bruc3W4yne\binary-scout-yolo-goal-dce07fc
+```
+
+| Check | Result | Evidence |
+|---|---|---|
+| `python --version` | Pass | Python 3.10.14. |
+| `mingw32-make clean` | Pass | Removed native build artifacts. |
+| `mingw32-make` | Pass | Built `src/kernel.dll` with MSYS2/UCRT64 gcc and OpenMP flags. |
+| `mingw32-make test` | Pass | C kernel unit tests passed 55/55. |
+| `python -m compileall -q .` | Pass | Current Python source compiles on Windows. |
+| `python scripts\verify_packed_kernel.py --include-nonbinary` | Pass | Packed kernel verifier passes, including 0/255 plane handling. |
+| `python scripts\verify_tile_contracts.py` | Pass | Tile contract checks pass. |
+| `python scripts\verify_detector_utils.py` | Pass | Detector utility checks pass. |
+| `python scripts\verify_tile_grid.py` | Pass | 49-tile grid checks pass. |
+| `python scripts\benchmark_xnor_kernel.py --synthetic --max-images 2 --runs 2 --warmup 1 --out data\results\smoke_xnor_kernel.json` | Pass | Synthetic benchmark wrote JSON; smoke values included `speedup_8ch=2.558` and `speedup_64ch=43.3237`. These are smoke measurements, not final edge claims. |
+| Active `scripts\*.py --help` | Pass | Every active top-level script supports `--help` on Windows. |
+
 ## Initial Retention Ledger
 
 | Path | Action | Reason |
