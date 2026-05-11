@@ -7,21 +7,14 @@ GPT-5.5 Pro final review status:
 ```text
 Submitted in ChatGPT Pro with /Users/bruc3w4yne/binary-scout-yolo-final-pass-context.zip attached.
 Conversation URL: https://chatgpt.com/c/6a01716f-1a28-8332-965b-c79cc32c70cb
-Result not yet consumed because Computer Use lost access to the Zen window before the final response could be read.
-First task in the new goal is to recover and integrate that response.
+Result consumed and distilled into docs/pro_final_review.md.
 ```
 
 ## Goal Text
 
 Finalize the binary-scout-yolo school ML project into a credible, research-framed, fully runnable CLI artifact in `/Users/bruc3w4yne/binary-scout-yolo`, using Windows RTX 4090 over SSH for heavy verification.
 
-First recover the submitted GPT-5.5 Pro final-review conversation at:
-
-```text
-https://chatgpt.com/c/6a01716f-1a28-8332-965b-c79cc32c70cb
-```
-
-The current git-tracked repo zip was attached there. Extract Pro's critical feedback into `docs/pro_final_review.md`. If Browser/Computer Use remains blocked after reasonable retries, document the blocker and proceed from independent research plus the existing repo audit. Use GPT-5.5 Pro again at major architecture/research/review crossroads whenever available, but never invent Pro feedback.
+GPT-5.5 Pro's final-pass verdict is now integrated in `docs/pro_final_review.md`: proceed, but freeze the architecture. The next goal is an evaluation-and-integration hardening pass, not a broad modeling exploration pass. Do not build a MobileNet scout, CUDA scout kernels, a full BNN detector, or a new detector architecture until the existing pipeline is measured correctly.
 
 Ground the final framing in reputable sources:
 
@@ -43,21 +36,21 @@ Continue until these phase gates are genuinely satisfied or blockers are documen
 
    Remove or quarantine remaining misleading/stale material. Make README/current audit the only runnable command truth. Fix stale `PROD.md` conflicts or split `PROD.md` into current spec vs archive. Simplify naming/imports where it improves clarity without broad packaging bloat.
 
-3. Binary scout meaning pass
+3. Baseline and binary scout meaning pass
 
-   Decide and implement the simplest credible binary path. At minimum, run full-split binary-XNOR feature extraction/evaluation or document why it is too slow or weak. Compare timing and accuracy against bitplane/spatial MLP, random, oracle, and heuristic baselines. Keep CPU C/OpenMP unless evidence justifies CUDA, Numba, PyTorch quantization, or another route.
+   Decide and implement the simplest credible binary path. At minimum, run full-split binary-XNOR feature extraction/evaluation or document why it is too slow or weak. Compare timing and accuracy against bitplane/spatial MLP, random multi-seed, spatial-prior-only, oracle-count, oracle-greedy, full-image YOLO, and all-tiles. Keep CPU C/OpenMP unless evidence justifies CUDA, Numba, PyTorch quantization, or another route.
 
 4. Scout model pass
 
-   Evaluate bitplane stats, spatial MLP, binary-XNOR, and one small learned occupancy scout only if it materially improves the story. Pick the final scout by measured recall/latency, not aesthetics.
+   Evaluate bitplane stats, spatial MLP, binary-XNOR, and binary-XNOR + spatial. Pick the final scout by measured recall/latency, not aesthetics. Do not force binary-XNOR to win; the final report can honestly say binary was useful, weak, or too slow if the evidence says so.
 
 5. Detector/evaluation pass
 
-   Make YOLO routing evaluation credible with K sweeps, cached vs live timing, p50/p95 latency, selected area/tile count, random/oracle/full/all-tile baselines, and, if feasible, VisDrone-compatible mAP/AP_small/AR_small via fine-tuned or suitable weights. If full mAP is too heavy, provide a documented smoke metric and exact command for the heavy benchmark.
+   Make YOLO routing evaluation credible with K sweeps, cached vs live timing, p50/p95 latency, selected area/tile count, random/oracle/full/all-tile baselines, and, if feasible, VisDrone-compatible mAP/AP_small/AR_small via fine-tuned or suitable weights. If full mAP is too heavy, clearly label class-agnostic routing recall as a smoke metric and provide the exact command for the heavy benchmark.
 
 6. Performance pass
 
-   Optimize the live scout bottleneck first. Add timing synchronization around GPU calls. Avoid repeated image work. Report CPU scout vs GPU YOLO phase times honestly.
+   Optimize the live scout bottleneck first. Add `torch.cuda.synchronize()` around GPU-timed sections, add warmup, split ground-truth parsing/matching out of headline latency, avoid repeated image work, and report CPU scout vs GPU YOLO phase times honestly.
 
 7. Reproducibility pass
 
@@ -88,48 +81,44 @@ Do not mark the goal complete until the repo is clean, pushed to GitHub, Windows
 
 ## First 10 Implementation Tasks
 
-1. Recover GPT-5.5 Pro final review and save it to `docs/pro_final_review.md`.
+1. Clean stale current-truth docs.
 
-   Verification: `Test-Path docs\pro_final_review.md` on Windows or `test -f docs/pro_final_review.md` on Mac.
+   Verification: `rg "evaluate_scout_yolo|--mode binary-xnor|--model bitplane-stats|scout_binary_xnor_linear|36" README.md PROD.md docs`.
 
-2. Create `docs/final_project_claims.md`.
+2. Fix or quarantine `scripts/benchmark_packed.py`.
 
-   Verification: document contains thesis, novelty, related work, acceptable claims, forbidden claims, and citations.
+   Verification: `python scripts/benchmark_packed.py --help` and `python -m compileall -q scripts/benchmark_packed.py`.
 
-3. Split or clean stale `PROD.md` command sections.
+3. Add `src/routing.py`.
 
-   Verification: `rg "evaluate_scout_yolo|--model bitplane-stats|scout_binary_xnor_linear|36" README.md PROD.md docs` shows no stale runnable-command truth outside archived/history sections.
+   Verification: `python scripts/verify_routing.py`.
 
-4. Add a benchmark manifest format.
+4. Upgrade `scripts/evaluate_scout_recall.py`.
 
-   Likely files: `src/metrics.py`, `scripts/run_benchmark_suite.py`, `docs/current_results.md`.
+   Add `prior`, `oracle-greedy`, random multi-trial mean/std, selected-area fraction, and selected tile count.
 
-   Verification: a smoke manifest can run full/random/oracle/scout-live on `--max-images 2` and writes one consolidated JSON.
+   Verification: run random/prior/oracle-greedy K sweeps on the val feature cache.
 
-5. Add robust timing synchronization.
+5. Add spatial-prior and spatial-only baselines.
 
-   Likely file: `scripts/run_yolo_tiles.py`.
+   Verification: the project can prove whether learned scouts beat simple location priors.
 
-   Verification: output JSON includes `load_ms`, `scout_ms`, `yolo_ms`, `merge_ms`, `latency_ms`, p50, p95, and CUDA synchronization when `device=cuda`.
+6. Refactor binary-XNOR feature extraction for reuse.
 
-6. Optimize live bitplane/spatial feature extraction.
+   Verification: binary feature extraction no longer reconstructs the binary layer unnecessarily per image, and metadata records binary params.
 
-   Likely files: `src/scout.py`, `scripts/run_yolo_tiles.py`.
+7. Add cached-vs-live feature verification.
 
-   Verification: `scout-live` K=8 on a fixed small subset is faster than the previous documented scout phase without changing selected tile IDs.
+   Verification: `python scripts/verify_live_features.py --feature-file <cache> --feature-mode binary-xnor --max-images 3`.
 
-7. Run full binary-XNOR val feature extraction, then decide whether full train is feasible.
+8. Fix `run_yolo_tiles.py` timing.
 
-   Verification: `python scripts\extract_tile_features.py --feature-mode binary-xnor --split val` and `python scripts\verify_tile_features.py --feature-file data\tile_features\binary_xnor_val.npz --expect-feature-dim 64 --expect-feature-mode binary-xnor`.
+   Verification: CUDA and CPU smoke runs produce per-phase timing, aggregate mean/p50/p95, and headline latency excluding ground-truth parsing.
 
-8. Train/evaluate binary-XNOR scout or document why it loses.
+9. Add binary-XNOR live scout support.
 
-   Verification: K sweep JSON compares binary-XNOR vs spatial MLP vs random vs oracle.
+   Verification: cached and live binary selected tile IDs match on the same deterministic sample.
 
-9. Add detector K sweep.
+10. Run the first credible routing and detector sweep.
 
-   Verification: consolidated results for `full`, `all`, `random K=[4,8,12,16,20]`, `oracle K=[4,8,12,16,20]`, `scout K=[4,8,12,16,20]`, and `scout-live K=[8]` on a defined subset.
-
-10. Create final demo command.
-
-    Verification: one command produces heatmap PNG/JSON plus routed YOLO result JSON for a known VisDrone val image.
+    Verification: `data/results/sweep_val100/summary.md` and `summary.json` contain detector recall, precision, F1, TP/FP/FN, selected area, tile count, and latency mean/p50/p95 for every method.
