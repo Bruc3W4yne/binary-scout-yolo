@@ -1,124 +1,490 @@
-# Next Goal Draft
+# Next Goal
 
-This is the comprehensive follow-up goal for finalizing the project after the first runnable prototype.
+This is the canonical follow-up goal after the first runnable prototype.
 
-GPT-5.5 Pro final review status:
+It incorporates the May 11, 2026 GPT-5.5 Pro cleanup review from:
 
 ```text
-Submitted in ChatGPT Pro with /Users/bruc3w4yne/binary-scout-yolo-final-pass-context.zip attached.
-Conversation URL: https://chatgpt.com/c/6a01716f-1a28-8332-965b-c79cc32c70cb
-Result consumed and distilled into docs/pro_final_review.md.
+https://chatgpt.com/c/6a018ab2-a66c-8328-af47-cd8423f58633
 ```
+
+The repo zip attached to Pro was the current git-tracked source of truth. Pro's second-pass correction changed the priority order:
+
+1. End-to-end pipeline function and credible evidence come first.
+2. Simplicity and efficiency come second.
+3. Code/doc polish comes third.
+
+The key correction is important: a clean-looking repo that cannot run the full scout -> tile selection -> YOLO -> merge/evaluate path is a failure. Cleanup must not become a framework rewrite, and lower LOC is only valuable when it preserves or improves correctness, performance, and readability.
 
 ## Goal Text
 
-Finalize the binary-scout-yolo school ML project into a credible, research-framed, fully runnable CLI artifact in `/Users/bruc3w4yne/binary-scout-yolo`, using Windows RTX 4090 over SSH for heavy verification.
+Ruthlessly finish `binary-scout-yolo` as a working, simple, benchmark-ready CLI pipeline.
 
-GPT-5.5 Pro's final-pass verdict is now integrated in `docs/pro_final_review.md`: proceed, but freeze the architecture. The next goal is an evaluation-and-integration hardening pass, not a broad modeling exploration pass. Do not build a MobileNet scout, CUDA scout kernels, a full BNN detector, or a new detector architecture until the existing pipeline is measured correctly.
+Codex acts as implementation agent, verification engineer, cleanup auditor, and project finisher.
 
-Ground the final framing in reputable sources:
+Primary priority:
 
 ```text
-SAHI / sliced inference for small objects
-VisDrone dataset and detection challenge
-XNOR-Net / binary neural networks
-Ultralytics / YOLO evaluation metrics
-Recent adaptive, density-guided, or guided slicing work
+The full scout-guided selective tiling pipeline must work end-to-end and produce credible evaluation evidence.
 ```
 
-Continue until these phase gates are genuinely satisfied or blockers are documented with exact next actions.
+Secondary priority:
 
-1. Research and claim lock
+```text
+Keep the repo simple, efficient, and readable. Lower LOC is good only when it preserves or improves correctness, performance, and clarity. Do not reduce LOC by hiding logic, weakening tests, or removing required functionality.
+```
 
-   Update `docs/research_framing.md` and create `docs/final_project_claims.md` with a narrow defensible thesis, novelty statement, related-work notes, acceptable claims, forbidden claims, and citation links.
+Third priority:
 
-2. Code-quality and command-truth pass
+```text
+Polish code and docs. Remove stale, misleading, duplicated, generated-looking, or dead artifacts. A cleanup pass that increases tracked LOC is suspicious unless the added code is required for functionality, tests, timing/schema support, or honest evaluation.
+```
 
-   Remove or quarantine remaining misleading/stale material. Make README/current audit the only runnable command truth. Fix stale `PROD.md` conflicts or split `PROD.md` into current spec vs archive. Simplify naming/imports where it improves clarity without broad packaging bloat.
+Do not call the project done after the first working pass. Iterate until implementation, verification, cleanup, claim audit, GPT-5.5 Pro review, and post-review fixes are complete.
 
-3. Baseline and binary scout meaning pass
+## Hard Constraints
 
-   Decide and implement the simplest credible binary path. At minimum, run full-split binary-XNOR feature extraction/evaluation or document why it is too slow or weak. Compare timing and accuracy against bitplane/spatial MLP, random multi-seed, spatial-prior-only, oracle-count, oracle-greedy, full-image YOLO, and all-tiles. Keep CPU C/OpenMP unless evidence justifies CUDA, Numba, PyTorch quantization, or another route.
+- Main deliverable: Windows-first local CLI pipeline for the RTX 4090 PC.
+- Docker and notebooks are out of scope for this pass.
+- Use official VisDrone train and val where available.
+- Do not add broad new models or research branches.
+- Do not add a full BNN detector, MobileNet scout, TensorRT, ONNX export, CUDA scout kernels, GUI, notebook demo, or CI matrix.
+- Do not overclaim. COCO-pretrained YOLO smoke runs are wiring evidence, not final VisDrone accuracy.
+- Do not claim binary-XNOR speed or accuracy unless measured in this repo.
 
-4. Scout model pass
+## Phase 0: Preserve Function, Inventory, Identify Breakage
 
-   Evaluate bitplane stats, spatial MLP, binary-XNOR, and binary-XNOR + spatial. Pick the final scout by measured recall/latency, not aesthetics. Do not force binary-XNOR to win; the final report can honestly say binary was useful, weak, or too slow if the evidence says so.
+Run first:
 
-5. Detector/evaluation pass
+```powershell
+git status --short
+git ls-files
+python -m compileall -q .
+mingw32-make clean
+mingw32-make
+mingw32-make test
+python scripts\verify_packed_kernel.py --include-nonbinary
+python scripts\verify_tile_contracts.py
+python scripts\verify_detector_utils.py
+python scripts\verify_tile_grid.py
+python scripts\benchmark_packed.py --help
+```
 
-   Make YOLO routing evaluation credible with K sweeps, cached vs live timing, p50/p95 latency, selected area/tile count, random/oracle/full/all-tile baselines, and, if feasible, VisDrone-compatible mAP/AP_small/AR_small via fine-tuned or suitable weights. If full mAP is too heavy, clearly label class-agnostic routing recall as a smoke metric and provide the exact command for the heavy benchmark.
+On macOS or Linux, use `make clean && make && make test` instead of `mingw32-make`.
 
-6. Performance pass
+Create a retention ledger for every tracked file:
 
-   Optimize the live scout bottleneck first. Add `torch.cuda.synchronize()` around GPU-timed sections, add warmup, split ground-truth parsing/matching out of headline latency, avoid repeated image work, and report CPU scout vs GPU YOLO phase times honestly.
+- keep
+- rewrite
+- move/rename
+- delete
+- archive only if genuinely necessary
 
-7. Reproducibility pass
+Record:
 
-   Ensure Windows setup, dataset download/verification, feature cache creation, training, evaluation, heatmap/demo generation, and benchmark commands work from clean instructions.
+- broken commands
+- stale docs
+- duplicated logic
+- misleading claims
+- generated-looking or overexplained text
+- current tracked LOC/diffstat baseline
 
-8. Demo/report artifact pass
+Gate 0:
 
-   Create a concise demo script or command sequence that produces heatmap/image examples and result JSON/tables suitable for group presentation.
+```text
+Do not edit broadly until current breakage is known. Confirm or disprove the benchmark_packed.py --help failure.
+```
 
-9. Final ruthless audit
+Known local caveat: on this Mac, `python3` works while `python` may not exist. Also, `make test` was observed hanging locally after building, while Pro reported it passed in its isolated review. Treat that as a real discrepancy to investigate, not as a solved issue.
 
-   Review every tracked source/doc/script for bloat, misleading comments, dead paths, brittle assumptions, unnecessary abstraction, and unverified claims.
+## Phase 1: Prove A Minimal End-To-End Path Before Large Cleanup
 
-10. Final handoff
+Before major restructuring, preserve or restore the shortest viable pipeline path.
 
-    Update `README.md`, `docs/current_results.md`, `docs/completion_audit.md`, `docs/final_project_claims.md`, and any result tables with what is verified, what remains unverified, exact commands, and how to present the project.
+Dataset and tile path:
 
-Do not mark the goal complete until the repo is clean, pushed to GitHub, Windows verification evidence is collected, and the final audit maps each gate to concrete files, commands, and results.
+- VisDrone verification works if data exists.
+- Tile dataset creation and verification work on a small `--max-images` run if data exists.
+- If data does not exist, scripts fail clearly and help text documents required paths.
 
-## Research Anchors
+Feature and scout path:
 
-- SAHI establishes the slice, detect, merge pattern for small objects and reports AP gains on aerial datasets including VisDrone/xView.
-- SAHI docs describe why high-resolution images resized to detector input size lose small-object detail, and why overlapping tiles plus merge are useful.
-- VisDrone provides the drone detection benchmark and official train/val/test-dev splits.
-- XNOR-Net motivates binary input/weight convolution with XNOR/popcount-style efficiency and CPU-friendly inference.
-- Ultralytics evaluation docs frame mAP, precision/recall, speed metrics, and class-wise diagnostics as the right detector-performance vocabulary.
-- Recent adaptive/guided slicing papers make the project less isolated: the research trend is reducing exhaustive tiling cost by selecting better regions.
+- Extract bitplane-stats features.
+- Append spatial features.
+- Train a tiny scout checkpoint.
+- Evaluate recall for at least scout, random, and oracle-greedy.
 
-## First 10 Implementation Tasks
+Detector path:
 
-1. Clean stale current-truth docs.
+- Run YOLO routing smoke for `full`, `all`, `random`, `heuristic`, `oracle-greedy`, and `scout` where data/checkpoint exist.
+- Produce at least one result JSON with timing phases.
 
-   Verification: `rg "evaluate_scout_yolo|--mode binary-xnor|--model bitplane-stats|scout_binary_xnor_linear|36" README.md PROD.md docs`.
+Kernel path:
 
-2. Fix or quarantine `scripts/benchmark_packed.py`.
+- Verify XNOR/popcount kernel.
+- Run synthetic kernel benchmark.
 
-   Verification: `python scripts/benchmark_packed.py --help` and `python -m compileall -q scripts/benchmark_packed.py`.
+Gate 1:
 
-3. Add `src/routing.py`.
+```text
+There must be a short-run evidence bundle, or a documented blocker with exact failing command, output, likely cause, and minimal next action. Do not proceed to cosmetic cleanup while the core pipeline is broken.
+```
 
-   Verification: `python scripts/verify_routing.py`.
+## Phase 2: Add Only Evaluation-Critical Missing Functionality
 
-4. Upgrade `scripts/evaluate_scout_recall.py`.
+Required selectors:
 
-   Add `prior`, `oracle-greedy`, random multi-trial mean/std, selected-area fraction, and selected tile count.
+- `full`
+- `all`
+- `random` with seed and multi-trial support
+- `prior` trained from train split only
+- `heuristic` using existing image/feature statistics, no new model
+- `oracle-count`
+- `oracle-greedy` set-cover style object coverage
+- `scout` from cached features/checkpoint
+- `scout-live` only if implemented cleanly; otherwise document as not implemented
 
-   Verification: run random/prior/oracle-greedy K sweeps on the val feature cache.
+Required result evidence:
 
-5. Add spatial-prior and spatial-only baselines.
+- selected tile count
+- selected area fraction
+- object/tile recall where applicable
+- detector detections and class-agnostic recall for YOLO smoke
+- selector metadata
+- seed
+- command
+- feature/checkpoint metadata
+- dataset/split/max-images
+- timing phases
 
-   Verification: the project can prove whether learned scouts beat simple location priors.
+Required timing phases:
 
-6. Refactor binary-XNOR feature extraction for reuse.
+- `image_load_ms`
+- `resize_preprocess_ms`
+- `gt_parse_ms`
+- `scout_ms`
+- `yolo_ms`
+- `merge_nms_ms`
+- `match_eval_ms`
+- `pipeline_ms_excl_gt`
+- `wall_ms`
 
-   Verification: binary feature extraction no longer reconstructs the binary layer unnecessarily per image, and metadata records binary params.
+Timing rules:
 
-7. Add cached-vs-live feature verification.
+- Synchronize CUDA around GPU sections.
+- Include warmup.
+- Summaries include mean, p50, p95, min, and max.
+- Do not mix ground-truth parsing into pipeline compute claims.
 
-   Verification: `python scripts/verify_live_features.py --feature-file <cache> --feature-mode binary-xnor --max-images 3`.
+Gate 2:
 
-8. Fix `run_yolo_tiles.py` timing.
+```text
+A sweep or equivalent repeated run can compare full/all/random/prior/heuristic/oracle/scout on a small dataset without code changes.
+```
 
-   Verification: CUDA and CPU smoke runs produce per-phase timing, aggregate mean/p50/p95, and headline latency excluding ground-truth parsing.
+## Phase 3: Simplify Architecture Without Building A Framework
 
-9. Add binary-XNOR live scout support.
+Convert to an importable package only if it improves reliability:
 
-   Verification: cached and live binary selected tile IDs match on the same deterministic sample.
+- Preferred layout: `src/binary_scout_yolo/`
+- No script-level `sys.path` hacks.
+- Scripts import package modules.
 
-10. Run the first credible routing and detector sweep.
+Keep modules few and coherent. Acceptable modules:
 
-    Verification: `data/results/sweep_val100/summary.md` and `summary.json` contain detector recall, precision, F1, TP/FP/FN, selected area, tile count, and latency mean/p50/p95 for every method.
+- `preprocess`
+- `features`
+- `binary_layer`
+- `kernel_wrapper`
+- `detector`
+- `routing`
+- `scout_model`
+- `timing` or result helpers only if they reduce duplication
+
+Do not create abstract base classes, registries, plugin systems, dataclass forests, or generic experiment frameworks.
+
+Shared logic should replace duplication in scripts:
+
+- selector logic
+- checkpoint loading/scoring
+- result writing
+- timing summary
+- feature metadata checks
+
+Gate 3:
+
+```text
+The package must be simpler than the previous script sprawl, not merely more formal. Include a diffstat and explain any net LOC increase.
+```
+
+## Phase 4: Binary-XNOR Path Cleanup
+
+Keep the C/Python boundary narrow:
+
+- Only `kernel_wrapper.py` calls `ctypes`.
+- The wrapper validates dtype, shape, contiguity, and library availability.
+- Higher-level code does not touch `ctypes`.
+
+Fix or replace `scripts/benchmark_packed.py`:
+
+- Prefer rename to `scripts/benchmark_xnor_kernel.py`.
+- `--help` works without data.
+- Synthetic mode works.
+- JSON output works.
+- No inflated speedup claims.
+
+Binary feature extraction:
+
+- Reuse extractor/layer per run.
+- Record binary metadata: filters, kernel size, threshold, seed, input channels, and weight hash.
+- Support `binary-xnor-spatial` only if it is straightforward.
+
+Live binary routing:
+
+- Implement only if clean and verified.
+- Otherwise state plainly that cached binary-XNOR features are verified but live binary routing remains future work.
+
+Gate 4:
+
+```text
+Kernel verification, synthetic benchmark, and binary feature extraction smoke pass.
+```
+
+## Phase 5: Tests And Verifiers Focused On Real Risk
+
+Required pure tests:
+
+- tile/grid contracts
+- detector offset/NMS/matching utilities
+- routing selectors, especially oracle-greedy and random determinism
+- feature metadata compatibility
+- timing/result summary sanity if implemented
+
+Required script verifiers:
+
+- packed kernel
+- tile contracts
+- detector utils
+- tile grid
+- routing
+- live feature parity if live route is claimed
+
+Do not add large test scaffolds, mock-heavy tests, or coverage theater.
+
+Gate 5:
+
+```powershell
+python -m compileall -q src scripts tests
+python -m pytest -q
+mingw32-make clean
+mingw32-make
+mingw32-make test
+python scripts\verify_packed_kernel.py --include-nonbinary
+python scripts\verify_tile_contracts.py
+python scripts\verify_detector_utils.py
+python scripts\verify_tile_grid.py
+python scripts\verify_routing.py
+python scripts\benchmark_xnor_kernel.py --synthetic --max-images 5 --runs 10 --warmup 2 --out data\results\smoke_xnor_kernel.json
+```
+
+Use equivalent `make` commands on macOS/Linux.
+
+## Phase 6: Ruthless Cleanup
+
+Delete stale files unless there is a strong reason to keep them. Prefer deletion over archive.
+
+Remove:
+
+- stale `PROD.md` if it conflicts with current truth
+- `docs/next_goal.md` after the final implementation goal is achieved and extracted into completion docs
+- `docs/legacy_plans/`
+- `scripts/legacy/`
+- `experiments/bnn_detector/` unless the user explicitly wants it preserved
+- stale commands
+- personal paths
+- old project names
+- misleading comments
+- generic boilerplate
+- duplicated helpers
+- unsupported claims
+
+Keep docs short and authoritative:
+
+- `README.md`
+- `docs/evaluation_protocol.md`
+- `docs/current_results.md`
+- `docs/final_project_claims.md`
+- `docs/binary_xnor_core.md`
+- `docs/completion_audit.md`
+- `docs/pro_final_review.md` only as historical context, not as a truth source
+
+README must contain exact working commands:
+
+- Windows setup
+- kernel build
+- verifiers
+- dataset prep
+- feature extraction
+- scout training
+- recall comparison
+- YOLO routing smoke
+- longer benchmark command
+
+Gate 6:
+
+```text
+Search current docs/scripts for stale command names, old project names, personal absolute paths, and dead modes. Fix all hits unless clearly inside archived historical context.
+```
+
+## Phase 7: Evidence Bundle And Benchmark Readiness
+
+Produce or document:
+
+- kernel synthetic benchmark JSON
+- scout recall comparison JSON/table
+- YOLO routing smoke JSON/table
+- timing summary with required phases
+- completion audit with commands run
+
+If VisDrone data is available:
+
+- Run `--max-images` smoke on official val.
+
+If VisDrone data is not available:
+
+- Do not fake performance.
+- Prove synthetic/unit wiring only.
+- Document exact official VisDrone commands to run later.
+
+Longer benchmark commands must be ready but do not need to be run:
+
+- official train+val tile prep
+- full feature extraction
+- scout training
+- `run_yolo_sweep` over selectors and top-K values, or an equivalent documented command sequence
+
+Gate 7:
+
+```text
+The repo can run short comparisons and is ready for long benchmarks without code changes.
+```
+
+## Phase 8: Final File-By-File Audit And Pro Review
+
+Run `git ls-files`.
+
+For every tracked file, justify:
+
+- why it exists
+- whether it is current
+- whether it supports the pipeline, tests, docs, or setup
+- whether it contains stale text or dead code
+
+Delete or rewrite anything that fails justification.
+
+Produce final diffstat:
+
+- files added
+- files deleted
+- files renamed
+- net LOC change
+- justification for any net LOC increase
+
+Run all final verification commands again.
+
+Prepare a GPT-5.5 Pro review package:
+
+- final tree
+- diff summary
+- retention ledger
+- commands run and outputs
+- evidence files
+- known limitations
+- claims intended for final report
+
+Use GPT-5.5 Pro for final review.
+
+If Pro flags blocking issues:
+
+- Fix them.
+- Rerun final verification.
+- If a Pro objection is intentionally not fixed, ask the user to explicitly waive that exact objection.
+
+Final stopping condition:
+
+```text
+Stop only when implementation, verification, cleanup, claim audit, file-by-file audit, Pro review, and post-review fixes are complete. Otherwise stop with exact blockers and next actions, not a vague "done."
+```
+
+## Final Acceptance Gate
+
+The project is accepted only when all of the following are true.
+
+End-to-end evidence exists:
+
+- At least one scout recall comparison result.
+- At least one YOLO routing smoke result.
+- At least one kernel verification/benchmark result.
+- Timing includes the required phase breakdown.
+- Results are clearly labeled smoke vs benchmark.
+
+Core commands pass:
+
+```powershell
+python -m compileall -q src scripts tests
+python -m pytest -q
+mingw32-make clean
+mingw32-make
+mingw32-make test
+python scripts\verify_packed_kernel.py --include-nonbinary
+python scripts\verify_tile_contracts.py
+python scripts\verify_detector_utils.py
+python scripts\verify_tile_grid.py
+python scripts\verify_routing.py
+python scripts\benchmark_xnor_kernel.py --synthetic --max-images 5 --runs 10 --warmup 2 --out data\results\smoke_xnor_kernel.json
+```
+
+Short pipeline smoke passes where data exists:
+
+- feature extraction
+- spatial append
+- scout training
+- recall evaluation
+- YOLO routing for `full`, `all`, `random`, `heuristic`, `oracle`, and `scout`
+
+Every tracked file is justified:
+
+- No unreviewed stale docs.
+- No legacy scripts in the active path.
+- No broken advertised commands.
+- No unsupported claims.
+- Diffstat and LOC growth justification are documented.
+
+GPT-5.5 Pro final review is completed:
+
+- Codex presents the final repo state to GPT-5.5 Pro.
+- Blocking Pro feedback is fixed.
+- Final verification is rerun after fixes.
+- The project is not "done" until Pro review agrees or the user explicitly waives remaining objections.
+
+## Do Not Do
+
+These are out of scope even if they sound like quality work:
+
+| Do not do | Reason |
+|---|---|
+| Add a full BNN detector | Distracts from scout-guided routing and creates misleading scope. |
+| Add MobileNet/TinyCNN scout baselines | Broadens model comparison before the current pipeline is finished. |
+| Add TensorRT/ONNX/export paths | Optimization distraction; not required for evaluation readiness. |
+| Add Docker | Immediate target is local Windows. |
+| Add notebooks/demos | Explicitly out of scope for this pass. |
+| Add a generic experiment framework | Bloat; scripts plus shared helpers are enough. |
+| Add plugin registries or abstract base classes | Overengineering for a small project. |
+| Add many docs | Fewer truth-source docs are better. |
+| Archive lots of stale material | Preserves confusion; delete instead. |
+| Chase LOC reduction blindly | Smaller code that hides complexity or weakens correctness is worse. |
+| Add heavy mock-based tests | Prefer small tests/verifiers that catch real pipeline breakage. |
+| Rewrite all code for style | Refactor only when it improves correctness, reliability, or duplication. |
+| Add CI matrix | Nice later, not needed for the final school deliverable. |
+| Add final mAP claims from smoke runs | Misleading unless evaluated properly with a trained detector/baseline. |
+| Optimize the C kernel deeply before timing proves it matters | Measure first; avoid premature optimization. |
