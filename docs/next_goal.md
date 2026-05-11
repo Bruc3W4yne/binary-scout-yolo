@@ -42,6 +42,24 @@ Polish code and docs. Remove stale, misleading, duplicated, generated-looking, o
 
 Do not call the project done after the first working pass. Iterate until implementation, verification, cleanup, claim audit, GPT-5.5 Pro review, and post-review fixes are complete.
 
+## Code Quality Standard
+
+For this project, "good code" means evidence-bearing code first: every active module, script, and helper should either run the pipeline, verify the pipeline, benchmark the pipeline, or document exactly how to do those things.
+
+Follow these standards:
+
+- Prefer boring, direct CLI tools over a framework.
+- Keep module boundaries few and obvious.
+- Share selector, metadata, timing, and result-writing logic only where it prevents real duplication.
+- Do not add abstractions unless they remove confusion or prevent inconsistent behavior.
+- Keep the C/Python boundary narrow and heavily validated.
+- Make expected user failures clear: missing data, missing kernel build, bad checkpoint, bad feature metadata, or unavailable CUDA should fail with a useful message.
+- Keep tests and verifiers small, fast, and tied to real risks.
+- Keep comments sparse. Explain contracts and non-obvious native/ML details; remove narration and generated-looking boilerplate.
+- Keep docs short and command-true. There should be fewer active truth sources, not more.
+- Delete stale material instead of archiving it, unless historical context is genuinely needed.
+- Treat LOC as a signal, not a target. Net LOC growth must be justified by required functionality, verifiers, timing/schema support, or honest evaluation evidence.
+
 ## Hard Constraints
 
 - Main deliverable: Windows-first local CLI pipeline for the RTX 4090 PC.
