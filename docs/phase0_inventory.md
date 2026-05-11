@@ -23,6 +23,10 @@ Generated for the final cleanup goal. This is an evidence ledger, not a final co
 | `python3 scripts/benchmark_xnor_kernel.py --help` | Pass after replacement | Help prints without data, CUDA, or native library. |
 | `python3 scripts/benchmark_xnor_kernel.py --synthetic --max-images 2 --runs 2 --warmup 1` | Pass after native build fix | Writes ignored JSON evidence under `data/results/`; smoke run measured XNOR and float32 reference kernels. |
 | Active `scripts/*.py --help` | Pass | Every active top-level script supports `--help`; legacy scripts were not included. |
+| `python3 scripts/make_tile_dataset.py --max-images 1` | Blocked clearly | Reports missing VisDrone train images without a traceback. |
+| `python3 scripts/extract_tile_features.py --split val --max-images 1` | Blocked clearly | Reports missing tile JSONL. |
+| `python3 scripts/evaluate_scout_recall.py --features data/tile_features/missing.npz --top-k-values 8` | Blocked clearly | Reports missing feature file. |
+| `python3 scripts/run_yolo_tiles.py --selector full --split val --max-images 1` | Blocked clearly | Reports missing `ultralytics` in this Mac environment. Windows/4090 is the target for detector smoke. |
 
 ## Initial Retention Ledger
 
@@ -97,3 +101,7 @@ Follow-up native-build fix:
 
 - The Makefile now uses a no-OpenMP Darwin build so `make`, `make test`, `verify_packed_kernel.py`, and the synthetic XNOR benchmark can run on Mac.
 - Windows and Linux keep the OpenMP build flags.
+
+Follow-up CLI-error fix:
+
+- `make_tile_dataset.py` now reports missing VisDrone data as `FAIL: ...` instead of printing a Python traceback.

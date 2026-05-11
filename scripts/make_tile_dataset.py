@@ -138,24 +138,25 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    tiles = make_tiles(args.img_size, args.tile_size, args.stride)
-    splits = resolve_splits(args)
-
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    write_json(args.out_dir / "tile_grid.json", tile_grid_metadata(args.img_size, args.tile_size, args.stride))
-
-    summary = {
-        "img_size": args.img_size,
-        "resize": f"stretch_{args.img_size}",
-        "tile_size": args.tile_size,
-        "stride": args.stride,
-        "tiles_per_image": len(tiles),
-        "positive_rule": args.positive_rule,
-        "split_mode": args.split_mode,
-        "splits": {},
-    }
 
     try:
+        tiles = make_tiles(args.img_size, args.tile_size, args.stride)
+        splits = resolve_splits(args)
+
+        args.out_dir.mkdir(parents=True, exist_ok=True)
+        write_json(args.out_dir / "tile_grid.json", tile_grid_metadata(args.img_size, args.tile_size, args.stride))
+
+        summary = {
+            "img_size": args.img_size,
+            "resize": f"stretch_{args.img_size}",
+            "tile_size": args.tile_size,
+            "stride": args.stride,
+            "tiles_per_image": len(tiles),
+            "positive_rule": args.positive_rule,
+            "split_mode": args.split_mode,
+            "splits": {},
+        }
+
         for split, (data_root, stems) in splits.items():
             records = []
             split_summary = {
