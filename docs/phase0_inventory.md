@@ -50,6 +50,34 @@ C:\Users\Bruc3W4yne\binary-scout-yolo-goal-dce07fc
 | `python scripts\benchmark_xnor_kernel.py --synthetic --max-images 2 --runs 2 --warmup 1 --out data\results\smoke_xnor_kernel.json` | Pass | Synthetic benchmark wrote JSON; smoke values included `speedup_8ch=2.558` and `speedup_64ch=43.3237`. These are smoke measurements, not final edge claims. |
 | Active `scripts\*.py --help` | Pass | Every active top-level script supports `--help` on Windows. |
 
+## Windows Routing Baseline Verification
+
+Verified through SSH on `DESKTOP-JV3PK9G` using an exported clean tree from commit `c1418b8` at:
+
+```text
+C:\Users\Bruc3W4yne\binary-scout-yolo-goal-c1418b8
+```
+
+The clean tree used junctions to the existing ignored Windows `data` and `runs` directories.
+
+| Check | Result | Evidence |
+|---|---|---|
+| `python -m compileall -q .` | Pass | Current Python source compiles on Windows. |
+| `python scripts\verify_routing.py` | Pass | Synthetic checks for random determinism, train prior scores, heuristic scores, oracle-greedy set cover, recall evaluation, and selected-area calculation passed. |
+| `python scripts\verify_tile_contracts.py` | Pass | Tile contract checks still pass after routing changes. |
+| `python scripts\verify_detector_utils.py` | Pass | Detector utility checks still pass after routing changes. |
+| `python scripts\verify_tile_grid.py` | Pass | 49-tile grid checks still pass after routing changes. |
+| `python scripts\verify_visdrone_dataset.py` | Pass | Checked official train/val data presence and annotations. |
+| `python scripts\verify_tile_dataset.py` | Pass | Verified 6471 train images, 548 val images, 317079 train tile records, 26852 val tile records, and disjoint train/val. |
+| `python scripts\verify_tile_features.py --feature-file data\tile_features\bitplane_stats_spatial_val.npz --expect-feature-dim 38 --expect-feature-mode bitplane-stats-spatial` | Pass | Verified 26852 val feature rows and 548 images. |
+| `evaluate_scout_recall.py --mode scout --top-k-values 3 5 8` | Pass | Object recall: K=3 `0.307`, K=5 `0.410`, K=8 `0.516`. |
+| `evaluate_scout_recall.py --mode random --random-trials 5 --top-k-values 3 5 8` | Pass | Object recall: K=3 `0.192 +/- 0.003`, K=5 `0.307 +/- 0.005`, K=8 `0.452 +/- 0.004`. |
+| `evaluate_scout_recall.py --mode prior --prior-features data\tile_features\bitplane_stats_spatial_train.npz --top-k-values 3 5 8` | Pass | Object recall: K=3 `0.257`, K=5 `0.322`, K=8 `0.469`. |
+| `evaluate_scout_recall.py --mode heuristic --top-k-values 3 5 8` | Pass | Object recall: K=3 `0.192`, K=5 `0.300`, K=8 `0.447`. |
+| `evaluate_scout_recall.py --mode oracle-count --top-k-values 3 5 8` | Pass | Object recall: K=3 `0.554`, K=5 `0.658`, K=8 `0.763`. |
+| `evaluate_scout_recall.py --mode oracle-greedy --top-k-values 3 5 8` | Pass | Object recall: K=3 `0.693`, K=5 `0.846`, K=8 `0.953`. |
+| `run_yolo_tiles.py` one-image CUDA smokes | Pass | `full`, `all`, `random`, `prior`, `heuristic`, `oracle-greedy`, and cached `scout` all wrote JSON result files. These are smoke checks, not final performance claims. |
+
 ## Initial Retention Ledger
 
 | Path | Action | Reason |

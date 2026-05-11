@@ -22,6 +22,7 @@ mingw32-make
 python scripts\verify_packed_kernel.py --include-nonbinary
 python scripts\verify_tile_contracts.py
 python scripts\verify_detector_utils.py
+python scripts\verify_routing.py
 ```
 
 Download VisDrone DET train/val:
@@ -49,8 +50,11 @@ python scripts\add_spatial_features.py --features data\tile_features\bitplane_st
 python scripts\add_spatial_features.py --features data\tile_features\bitplane_stats_val.npz
 python scripts\train_scout.py --train-features data\tile_features\bitplane_stats_spatial_train.npz --val-features data\tile_features\bitplane_stats_spatial_val.npz --out-dir runs\scout_spatial_mlp --hidden-dim 64 --epochs 30 --device cuda
 python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt --mode scout --top-k-values 4 8 12 16 20
-python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --mode random --top-k-values 4 8 12 16 20
-python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --mode oracle --top-k-values 4 8 12 16 20
+python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --mode random --random-trials 5 --top-k-values 4 8 12 16 20
+python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --mode prior --prior-features data\tile_features\bitplane_stats_spatial_train.npz --top-k-values 4 8 12 16 20
+python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --mode heuristic --top-k-values 4 8 12 16 20
+python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --mode oracle-count --top-k-values 4 8 12 16 20
+python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val.npz --mode oracle-greedy --top-k-values 4 8 12 16 20
 python scripts\render_scout_heatmap.py --features data\tile_features\bitplane_stats_spatial_val.npz --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt --mode scout --top-k 8
 ```
 
@@ -69,13 +73,16 @@ Run detector/router smoke checks:
 
 ```powershell
 python scripts\run_yolo_tiles.py --selector full --split val --max-images 2 --device cuda
+python scripts\run_yolo_tiles.py --selector all --split val --max-images 2 --device cuda
 python scripts\run_yolo_tiles.py --selector random --top-k 8 --split val --max-images 2 --device cuda
-python scripts\run_yolo_tiles.py --selector oracle --top-k 8 --split val --max-images 2 --device cuda
+python scripts\run_yolo_tiles.py --selector prior --top-k 8 --split val --max-images 2 --device cuda
+python scripts\run_yolo_tiles.py --selector heuristic --top-k 8 --split val --max-images 2 --device cuda
+python scripts\run_yolo_tiles.py --selector oracle-greedy --top-k 8 --split val --max-images 2 --device cuda
 python scripts\run_yolo_tiles.py --selector scout --top-k 8 --split val --max-images 2 --device cuda --features data\tile_features\bitplane_stats_spatial_val.npz --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt
 python scripts\run_yolo_tiles.py --selector scout-live --top-k 8 --split val --max-images 2 --device cuda --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt
 ```
 
-`scout` uses cached tile scores to isolate detector routing. `scout-live` computes bitplane scout features inside the timed path and reports phase timings. These detector numbers are a pipeline smoke signal, not final VisDrone accuracy: `yolov8n.pt` is COCO-pretrained unless you later fine-tune or replace the weights.
+`scout` uses cached tile scores to isolate detector routing. `scout-live` computes bitplane scout features inside the timed path and reports phase timings. `prior`, `heuristic`, and `oracle-greedy` are baselines that keep the scout claim honest. These detector numbers are a pipeline smoke signal, not final VisDrone accuracy: `yolov8n.pt` is COCO-pretrained unless you later fine-tune or replace the weights.
 
 ## Data Contract
 

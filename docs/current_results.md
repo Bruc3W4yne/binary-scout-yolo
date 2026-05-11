@@ -36,6 +36,23 @@ Interpretation:
 
 The first bitplane-only linear scout was worse than random. Adding cheap spatial tile features made the scout useful at tight tile budgets, especially K=4 and K=8. A tiny 64-hidden-unit MLP improves coverage further while staying lightweight. There is still large headroom to the oracle upper bound.
 
+### Selector Baseline Pass
+
+Verified on the Windows RTX 4090 machine from clean exported commit `c1418b8` against the full val feature cache:
+
+| Method | K=3 | K=5 | K=8 | Selected Area at K=8 |
+|---|---:|---:|---:|---:|
+| Random, 5 trials | 0.192 +/- 0.003 | 0.307 +/- 0.005 | 0.452 +/- 0.004 | 0.416 |
+| Spatial prior from train split | 0.257 | 0.322 | 0.469 | 0.250 |
+| Content heuristic | 0.192 | 0.300 | 0.447 | 0.317 |
+| Spatial MLP scout | 0.307 | 0.410 | 0.516 | 0.274 |
+| Oracle-count | 0.554 | 0.658 | 0.763 | 0.272 |
+| Oracle-greedy set cover | 0.693 | 0.846 | 0.953 | 0.398 |
+
+Interpretation:
+
+The spatial MLP scout is better than random, a simple train-split spatial prior, and the content-only heuristic at K=8. The gap between scout K=8 recall `0.516` and greedy-oracle K=8 recall `0.953` is useful: it says the routing problem is not saturated, and future scout work has real headroom.
+
 ## YOLO Routing Smoke Results
 
 Class-agnostic recall against VisDrone boxes with COCO-pretrained `yolov8n.pt`.
@@ -58,6 +75,20 @@ Live spatial MLP scout phase timing on the 25-image smoke run:
 | YOLO selected tiles | 31.0 ms |
 | Merge | 1.0 ms |
 
+Tiny one-image CUDA smoke from clean exported commit `c1418b8`, used only to prove the new selectors execute end to end:
+
+| Method | Images | Tiles | Area | Recall | Mean Latency |
+|---|---:|---:|---:|---:|---:|
+| Full-image YOLO | 1 | 0 | 1.000 | 0.024 | 405.1 ms |
+| All tiles | 1 | 49 | 1.000 | 0.102 | 494.8 ms |
+| Random K=8 | 1 | 8 | 0.391 | 0.063 | 390.2 ms |
+| Spatial prior K=8 | 1 | 8 | 0.250 | 0.079 | 388.5 ms |
+| Content heuristic K=8 | 1 | 8 | 0.328 | 0.016 | 517.7 ms |
+| Oracle-greedy K=8 | 1 | 8 | 0.391 | 0.087 | 376.7 ms |
+| Spatial MLP scout K=8, cached scores | 1 | 8 | 0.234 | 0.102 | 398.3 ms |
+
+This one-image YOLO table is a smoke test, not a performance claim. It confirms that `full`, `all`, `random`, `prior`, `heuristic`, `oracle-greedy`, and cached `scout` all run on Windows/CUDA and write JSON metrics.
+
 ## What This Supports
 
 The pipeline is now runnable end to end:
@@ -71,7 +102,7 @@ The scout can also render a tile-score heatmap with top-K borders via `scripts/r
 The best current claim is narrow and defensible:
 
 ```text
-On initial smoke benchmarks, a cheap spatial MLP scout selected higher-value tiles than random at K=8 and approached the oracle direction while using only 8 of 49 tiles.
+On full-val tile-label evaluation, a cheap spatial MLP scout selects higher-value tiles than random, a train-split spatial prior, and a content-only heuristic at K=8 while using only 8 of 49 candidate tiles.
 ```
 
 ## What Not To Claim Yet
