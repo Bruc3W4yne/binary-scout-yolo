@@ -23,7 +23,7 @@ from preprocess import Tile  # noqa: E402
 from scout import (  # noqa: E402
     BINARY_XNOR_DIM,
     BITPLANE_STATS_DIM,
-    binary_xnor_features,
+    BinaryXnorExtractor,
     bitplane_stats_features,
     load_resized_rgb,
 )
@@ -75,6 +75,14 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
     n_boxes = []
     box_indices = []
     box_offsets = [0]
+    binary_extractor = None
+    if args.feature_mode == "binary-xnor":
+        binary_extractor = BinaryXnorExtractor(
+            n_filters=args.binary_filters,
+            kernel_size=args.binary_kernel_size,
+            threshold=args.binary_threshold,
+            seed=args.seed,
+        )
 
     for image_idx, (stem, image_records) in enumerate(groups.items(), start=1):
         image_records = sorted(image_records, key=lambda item: item["tile_id"])
@@ -83,14 +91,9 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
         if args.feature_mode == "bitplane-stats":
             image_features = bitplane_stats_features(rgb, tiles)
         else:
-            image_features = binary_xnor_features(
-                rgb,
-                tiles,
-                n_filters=args.binary_filters,
-                kernel_size=args.binary_kernel_size,
-                threshold=args.binary_threshold,
-                seed=args.seed,
-            )
+            if binary_extractor is None:
+                raise RuntimeError("binary extractor was not initialized")
+            image_features = binary_extractor.features(rgb, tiles)
 
         features.append(image_features)
         for record in image_records:
@@ -108,7 +111,7 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
     if not features:
         raise ValueError("no features extracted; input JSONL is empty")
 
-    return {
+    arrays = {
         "features": np.vstack(features).astype(np.float32),
         "labels": np.asarray(labels, dtype=np.uint8),
         "image_ids": np.asarray(image_ids, dtype=np.uint32),
@@ -119,6 +122,9 @@ def extract_features(records: list[dict], args: argparse.Namespace) -> dict[str,
         "box_offsets": np.asarray(box_offsets, dtype=np.uint32),
         "box_indices": np.asarray(box_indices, dtype=np.uint16),
     }
+    if binary_extractor is not None:
+        arrays["binary_metadata_json"] = np.asarray(json.dumps(binary_extractor.metadata()))
+    return arrays
 
 
 def output_path(args: argparse.Namespace) -> Path:
@@ -162,6 +168,8 @@ def main() -> int:
             "max_images": int(args.max_images),
             "requires_c_kernel": args.feature_mode == "binary-xnor",
         }
+        if "binary_metadata_json" in arrays:
+            metadata.update(json.loads(str(arrays["binary_metadata_json"].item())))
         arrays["metadata_json"] = np.asarray(json.dumps(metadata))
 
         args.out_dir.mkdir(parents=True, exist_ok=True)

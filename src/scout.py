@@ -8,6 +8,7 @@ training before the binary-XNOR feature path is added.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -94,6 +95,52 @@ def spatial_tile_features(tiles: list[Tile], img_size: int = 640) -> np.ndarray:
     return features
 
 
+class BinaryXnorExtractor:
+    def __init__(
+        self,
+        n_filters: int = BINARY_XNOR_DIM,
+        kernel_size: int = 3,
+        threshold: int = 0,
+        seed: int = 42,
+        input_channels: int = 24,
+    ):
+        self.threshold = int(threshold)
+        self.seed = int(seed)
+        self.layer = BinaryConvLayer(
+            n_filters=n_filters,
+            n_ch=input_channels,
+            kH=kernel_size,
+            kW=kernel_size,
+            seed=seed,
+        )
+
+    def weight_hash(self) -> str:
+        weights = np.ascontiguousarray(self.layer.weights, dtype=np.int8)
+        return hashlib.sha256(weights.tobytes()).hexdigest()
+
+    def metadata(self) -> dict:
+        return {
+            "binary_filters": int(self.layer.n_filters),
+            "binary_kernel_size": int(self.layer.kH),
+            "binary_threshold": int(self.threshold),
+            "binary_seed": int(self.seed),
+            "binary_input_channels": int(self.layer.n_ch),
+            "binary_weight_sha256": self.weight_hash(),
+        }
+
+    def features(self, rgb: np.ndarray, tiles: list[Tile]) -> np.ndarray:
+        rgb = np.asarray(rgb, dtype=np.uint8)
+        if rgb.ndim != 3 or rgb.shape[2] != 3:
+            raise ValueError(f"rgb must have shape [H, W, 3], got {rgb.shape}")
+
+        planes = rgb_to_bitplanes(rgb)
+        if planes.shape[0] != self.layer.n_ch:
+            raise ValueError(f"expected {self.layer.n_ch} bitplanes, got {planes.shape[0]}")
+        scores = self.layer.forward(planes)
+        binary_maps = self.layer.apply_threshold(scores, threshold=self.threshold).astype(np.float32)
+        return _rect_means_chw(binary_maps, tiles)
+
+
 def binary_xnor_features(
     rgb: np.ndarray,
     tiles: list[Tile],
@@ -102,17 +149,10 @@ def binary_xnor_features(
     threshold: int = 0,
     seed: int = 42,
 ) -> np.ndarray:
-    rgb = np.asarray(rgb, dtype=np.uint8)
-    if rgb.ndim != 3 or rgb.shape[2] != 3:
-        raise ValueError(f"rgb must have shape [H, W, 3], got {rgb.shape}")
-
-    planes = rgb_to_bitplanes(rgb)
-    layer = BinaryConvLayer(
+    extractor = BinaryXnorExtractor(
         n_filters=n_filters,
-        n_ch=planes.shape[0],
-        kH=kernel_size,
-        kW=kernel_size,
+        kernel_size=kernel_size,
+        threshold=threshold,
         seed=seed,
     )
-    binary_maps = layer.apply_threshold(layer.forward(planes), threshold=threshold).astype(np.float32)
-    return _rect_means_chw(binary_maps, tiles)
+    return extractor.features(rgb, tiles)
