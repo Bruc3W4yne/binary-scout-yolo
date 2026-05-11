@@ -1,5 +1,6 @@
 CC      = gcc
 SRCDIR  = src
+UNAME_S := $(shell uname -s)
 
 ifeq ($(OS),Windows_NT)
     EXT         = .dll
@@ -8,6 +9,14 @@ ifeq ($(OS),Windows_NT)
     CFLAGS_TEST = -O1 -g -Wall -Wextra -lm
     CLEAN_FILES = $(subst /,\,$(SRCDIR)/kernel.so $(SRCDIR)/kernel.dll $(SRCDIR)/kernel_test $(SRCDIR)/kernel_test.exe)
     CLEAN_CMD   = cmd /C del /Q $(CLEAN_FILES) 2>NUL
+else ifeq ($(UNAME_S),Darwin)
+    EXT         = .so
+    CFLAGS_SO   = -O3 -march=native -shared -fPIC -lm
+    TEST_BIN    = $(SRCDIR)/kernel_test
+    CFLAGS_TEST = -O1 -g -Wall -Wextra -lm
+    CLEAN_CMD   = rm -rf $(SRCDIR)/kernel.so $(SRCDIR)/kernel.dll \
+                         $(SRCDIR)/kernel_test $(SRCDIR)/kernel_test.exe \
+                         $(SRCDIR)/kernel_test.dSYM
 else
     EXT         = .so
     CFLAGS_SO   = -O3 -march=native -fopenmp -shared -fPIC -lm

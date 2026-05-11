@@ -13,14 +13,15 @@ Generated for the final cleanup goal. This is an evidence ledger, not a final co
 | `python3 --version` | Pass | Python 3.9.6 on Mac. |
 | `python3 -m compileall -q .` | Pass | Current Python source compiles. |
 | `make clean` | Pass on Mac | Removes native outputs. |
-| `make` | Fail on Mac | Apple clang rejects `-fopenmp`; Windows/MSYS2 remains the primary build target. |
-| `python3 scripts/verify_packed_kernel.py --include-nonbinary` | Blocked on Mac | Fails clearly because `src/kernel.so` is absent after native build failure. |
+| `make` | Fixed on Mac | Makefile now omits `-fopenmp` on Darwin while preserving OpenMP flags for Windows/Linux. |
+| `make test` | Fixed on Mac | Darwin test build now omits sanitizers that caused the local test binary to hang; kernel tests pass 55/55. |
+| `python3 scripts/verify_packed_kernel.py --include-nonbinary` | Pass after native build fix | Packed kernel verifier passes, including nonbinary 0/255 input-plane handling. |
 | `python3 scripts/verify_tile_contracts.py` | Pass | Tile/grid/parser/bitplane/area/split checks pass. |
 | `python3 scripts/verify_detector_utils.py` | Pass | IoU/NMS/tile offset/matching checks pass. |
 | `python3 scripts/verify_tile_grid.py` | Pass | 49-tile 160/80 grid covers 640x640. |
 | `python3 scripts/benchmark_packed.py --help` | Confirmed broken before replacement | It sampled absent VisDrone images before argument parsing and raised `ValueError`. |
 | `python3 scripts/benchmark_xnor_kernel.py --help` | Pass after replacement | Help prints without data, CUDA, or native library. |
-| `python3 scripts/benchmark_xnor_kernel.py --synthetic --runs 1 --warmup 0` | Blocked on Mac | Fails clearly because native `kernel.so` is not built. |
+| `python3 scripts/benchmark_xnor_kernel.py --synthetic --max-images 2 --runs 2 --warmup 1` | Pass after native build fix | Writes ignored JSON evidence under `data/results/`; smoke run measured XNOR and float32 reference kernels. |
 | Active `scripts/*.py --help` | Pass | Every active top-level script supports `--help`; legacy scripts were not included. |
 
 ## Initial Retention Ledger
@@ -92,6 +93,7 @@ Why this is the simplest clean fix:
 - It returned flattened float weights while the wrapper expects `[channels, kH, kW]`.
 - The replacement keeps one job: synthetic native-kernel timing with JSON output.
 
-Current limitation:
+Follow-up native-build fix:
 
-- The benchmark cannot run on this Mac until a native `kernel.so` is built. The failure is clear and expected because Apple clang rejected OpenMP.
+- The Makefile now uses a no-OpenMP Darwin build so `make`, `make test`, `verify_packed_kernel.py`, and the synthetic XNOR benchmark can run on Mac.
+- Windows and Linux keep the OpenMP build flags.

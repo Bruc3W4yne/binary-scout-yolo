@@ -15,6 +15,7 @@ src/kernel.so
 src/kernel.dll
 src/kernel_test
 src/kernel_test.exe
+src/kernel_test.dSYM/
 
 # ── Python ──────────────────────────────────────────────────────────────────
 __pycache__/

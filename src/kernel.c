@@ -926,7 +926,7 @@ static void test_packed_u64_parity_f32(void) {
     uint64_t xnor_wt[1] = {0xF0F0F0F0F0F0F0F0ULL};
     int32_t  xnor_out[4];
 
-    float f32_wt[NCH * 1];
+    float f32_wt[64];
     for (int ch = 0; ch < NCH; ch++)
         f32_wt[ch] = ((xnor_wt[0] >> ch) & 1ULL) ? 1.0f : -1.0f;
     float f32_out[4];
