@@ -89,6 +89,22 @@ Tiny one-image CUDA smoke from clean exported commit `c1418b8`, used only to pro
 
 This one-image YOLO table is a smoke test, not a performance claim. It confirms that `full`, `all`, `random`, `prior`, `heuristic`, `oracle-greedy`, and cached `scout` all run on Windows/CUDA and write JSON metrics.
 
+Timing schema smoke from clean exported commit `baf87f3`, using cached scout K=8, one warmup image, and one measured val image:
+
+| Phase | Mean |
+|---|---:|
+| Image load | 6.4 ms |
+| Resize/preprocess | 10.1 ms |
+| Ground-truth parse | 0.6 ms |
+| Scout | 0.0 ms |
+| YOLO | 17.2 ms |
+| Merge/NMS | 1.1 ms |
+| Match/eval | 0.8 ms |
+| Pipeline latency excluding ground truth | 34.8 ms |
+| Wall time | 36.5 ms |
+
+`run_yolo_tiles.py` now reports phase summaries with mean, p50, p95, min, and max. The printed latency is `pipeline_ms_excl_gt`, not wall time with ground-truth parsing mixed in.
+
 ## What This Supports
 
 The pipeline is now runnable end to end:
