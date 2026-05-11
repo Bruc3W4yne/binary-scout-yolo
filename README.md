@@ -10,7 +10,7 @@ UAV image -> binary/XNOR scout tile scores -> top-K tiles -> YOLO on selected cr
 
 The current repo implements the verified binary core, VisDrone tile dataset generation, C-free and binary-XNOR scout features, scout recall evaluation, and YOLO selected-tile routing.
 
-See `docs/current_results.md` for the latest Windows RTX 4090 smoke results and caveats. See `docs/research_framing.md` for the defensible novelty/claim framing, `docs/binary_xnor_core.md` for the native binary core, and `docs/completion_audit.md` for the current phase-gate handoff.
+See `docs/current_results.md` for the latest Windows RTX 4090 smoke results and caveats. See `docs/final_project_claims.md` for the defensible novelty/claim framing, `docs/evaluation_protocol.md` for longer benchmark commands, `docs/binary_xnor_core.md` for the native binary core, and `docs/completion_audit.md` for the current phase-gate handoff.
 
 ## Windows Quickstart
 
@@ -23,6 +23,7 @@ python scripts\verify_packed_kernel.py --include-nonbinary
 python scripts\verify_tile_contracts.py
 python scripts\verify_detector_utils.py
 python scripts\verify_routing.py
+python -m pytest -q
 ```
 
 Download VisDrone DET train/val:

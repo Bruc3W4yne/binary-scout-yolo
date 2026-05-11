@@ -1,47 +1,42 @@
-# setup.ps1 — Windows/PowerShell setup for SOD-OPT
+# Windows setup for the binary-scout YOLO pipeline.
 #
-# Usage (from the repo root in PowerShell):
-#   .\setup.ps1            # auto-detect CUDA
-#   .\setup.ps1 cpu        # force CPU-only PyTorch
-#   .\setup.ps1 cu121      # CUDA 12.x
-#   .\setup.ps1 cu118      # CUDA 11.8
+# Run from the repo root in PowerShell:
+#   .\setup.ps1          # auto-detect CUDA
+#   .\setup.ps1 cpu      # CPU-only PyTorch
+#   .\setup.ps1 cu126    # CUDA 12.6 PyTorch
 #
-# Prerequisites:
-#   1. Python 3.10+   — https://www.python.org/downloads/
-#   2. gcc (MinGW-w64) — needed to compile the C kernel:
-#        winget install MSYS2.MSYS2
-#      Then from the MSYS2 MinGW64 shell run:
-#        pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-openmp make
-#      Then add C:\msys64\mingw64\bin to your PATH.
-#
-# If PowerShell blocks execution, run once:
-#   Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+# Native kernel prerequisite:
+#   Install MSYS2, open the "MSYS2 UCRT64" shell, then run:
+#     pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make
+#   PowerShell builds need C:\msys64\ucrt64\bin on PATH.
 
 param(
+    [ValidateSet("auto", "cpu", "cu118", "cu121", "cu124", "cu126")]
     [string]$CudaBuild = "auto"
 )
 
 $ErrorActionPreference = "Stop"
 
-# ── Helper ────────────────────────────────────────────────────────────────────
-function Write-Step([string]$msg) {
-    Write-Host "[setup] $msg" -ForegroundColor Cyan
+function Write-Step([string]$Message) {
+    Write-Host "[setup] $Message" -ForegroundColor Cyan
 }
 
-function Write-Warn([string]$msg) {
-    Write-Host "[setup] WARNING: $msg" -ForegroundColor Yellow
+function Write-Warn([string]$Message) {
+    Write-Host "[setup] WARNING: $Message" -ForegroundColor Yellow
 }
 
-# ── 0. Execution-policy check ────────────────────────────────────────────────
+$UcrtBin = "C:\msys64\ucrt64\bin"
+if (Test-Path $UcrtBin) {
+    $env:PATH = "$UcrtBin;$env:PATH"
+}
+
 $policy = Get-ExecutionPolicy -Scope CurrentUser
 if ($policy -eq "Restricted") {
     Write-Warn "PowerShell execution policy is Restricted."
-    Write-Warn "Run this once to fix it:"
-    Write-Warn "  Set-ExecutionPolicy RemoteSigned -Scope CurrentUser"
+    Write-Warn "Run once: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser"
     exit 1
 }
 
-# ── 1. Find Python ────────────────────────────────────────────────────────────
 $pythonCmd = $null
 foreach ($cmd in @("python", "python3")) {
     if (Get-Command $cmd -ErrorAction SilentlyContinue) {
@@ -50,116 +45,79 @@ foreach ($cmd in @("python", "python3")) {
     }
 }
 if (-not $pythonCmd) {
-    Write-Host "ERROR: Python not found. Install from https://www.python.org/downloads/" -ForegroundColor Red
+    Write-Host "ERROR: Python not found. Install Python 3.10+ first." -ForegroundColor Red
     exit 1
 }
-$pyVersion = & $pythonCmd --version 2>&1
-Write-Step "Using $pyVersion ($pythonCmd)"
+Write-Step "Using $(& $pythonCmd --version 2>&1) ($pythonCmd)"
 
-# ── 2. Create venv ────────────────────────────────────────────────────────────
 if (-not (Test-Path "venv")) {
-    Write-Step "Creating virtual environment..."
+    Write-Step "Creating virtual environment"
     & $pythonCmd -m venv venv
 } else {
-    Write-Step "venv already exists, skipping creation."
+    Write-Step "venv already exists"
 }
 
-# Activate
 $activateScript = ".\venv\Scripts\Activate.ps1"
 if (-not (Test-Path $activateScript)) {
     Write-Host "ERROR: venv activation script not found at $activateScript" -ForegroundColor Red
     exit 1
 }
 . $activateScript
-Write-Step "venv activated."
 python -m pip install --quiet --upgrade pip
 
-# ── 3. Detect CUDA ────────────────────────────────────────────────────────────
 if ($CudaBuild -eq "auto") {
-    $nvcc = Get-Command nvcc -ErrorAction SilentlyContinue
-    $nsmi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
-
-    if ($nvcc) {
-        $nvccOut = & nvcc --version 2>&1 | Out-String
-        if ($nvccOut -match "release (\d+)\.(\d+)") {
-            $major = [int]$Matches[1]
-            if ($major -ge 12) {
-                $CudaBuild = "cu121"
-            } elseif ($major -eq 11) {
-                $CudaBuild = "cu118"
-            } else {
-                $CudaBuild = "cpu"
-            }
-            Write-Step "Detected CUDA $($Matches[1]).$($Matches[2]) -> using $CudaBuild build"
-        } else {
-            $CudaBuild = "cu121"
-            Write-Step "nvcc found but version unreadable, assuming cu121"
-        }
-    } elseif ($nsmi) {
-        $CudaBuild = "cu121"
-        Write-Step "nvidia-smi found, assuming CUDA 12.x -> using cu121 build"
+    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+        $CudaBuild = "cu126"
+        Write-Step "nvidia-smi found; using $CudaBuild PyTorch build"
     } else {
         $CudaBuild = "cpu"
-        Write-Step "No CUDA detected -> using CPU-only PyTorch"
+        Write-Step "No CUDA detected; using CPU-only PyTorch"
     }
 }
 
-# ── 4. Install PyTorch ────────────────────────────────────────────────────────
 if ($CudaBuild -eq "cpu") {
-    Write-Step "Installing CPU-only PyTorch..."
+    Write-Step "Installing CPU-only PyTorch"
     pip install torch torchvision
 } else {
-    Write-Step "Installing PyTorch with $CudaBuild..."
+    Write-Step "Installing PyTorch $CudaBuild"
     pip install torch torchvision --index-url "https://download.pytorch.org/whl/$CudaBuild"
 }
 
-# ── 5. Install remaining dependencies ────────────────────────────────────────
-Write-Step "Installing remaining dependencies from requirements.txt..."
+Write-Step "Installing remaining dependencies"
 $deps = Get-Content requirements.txt |
     Where-Object { $_ -notmatch '^\s*#' -and $_ -notmatch '^\s*$' -and $_ -notmatch '^torch' }
 if ($deps) {
-    $deps | pip install --quiet -r /dev/stdin 2>$null
-    # Fallback for systems where /dev/stdin doesn't exist
-    if ($LASTEXITCODE -ne 0) {
-        $tmpFile = [System.IO.Path]::GetTempFileName()
-        $deps | Set-Content $tmpFile
-        pip install --quiet -r $tmpFile
-        Remove-Item $tmpFile
-    }
+    $tmpFile = [System.IO.Path]::GetTempFileName()
+    $deps | Set-Content $tmpFile
+    pip install --quiet -r $tmpFile
+    Remove-Item $tmpFile
 }
 
-# ── 6. Build C kernel ─────────────────────────────────────────────────────────
-Write-Step "Building C kernel (make)..."
+Write-Step "Building C kernel"
 $gccAvailable = Get-Command gcc -ErrorAction SilentlyContinue
-$makeAvailable = Get-Command make -ErrorAction SilentlyContinue
-
+$makeAvailable = Get-Command mingw32-make -ErrorAction SilentlyContinue
 if ($gccAvailable -and $makeAvailable) {
-    make
+    mingw32-make
     if ($LASTEXITCODE -eq 0) {
-        Write-Step "kernel.dll built successfully."
+        Write-Step "kernel.dll built successfully"
     } else {
-        Write-Warn "make failed. Check gcc/OpenMP installation."
+        Write-Warn "mingw32-make failed. Check MSYS2 UCRT64 gcc installation."
     }
 } else {
-    Write-Warn "gcc or make not found. The C kernel will not be available."
-    Write-Host ""
-    Write-Host "  To install MinGW-w64 (gcc for Windows):" -ForegroundColor Yellow
-    Write-Host "    winget install MSYS2.MSYS2" -ForegroundColor Yellow
-    Write-Host "  Then open the MSYS2 MinGW64 shell and run:" -ForegroundColor Yellow
-    Write-Host "    pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-openmp make" -ForegroundColor Yellow
-    Write-Host "  Then add C:\msys64\mingw64\bin to your PATH and re-run setup.ps1." -ForegroundColor Yellow
+    Write-Warn "gcc or mingw32-make not found. The C kernel will not be available."
+    Write-Host "Open the MSYS2 UCRT64 shell and run:" -ForegroundColor Yellow
+    Write-Host "  pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make" -ForegroundColor Yellow
+    Write-Host "Then re-run setup.ps1 from PowerShell." -ForegroundColor Yellow
 }
 
-# ── 7. Summary ────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "Setup complete." -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor White
 Write-Host "  .\venv\Scripts\Activate.ps1"
-Write-Host ""
 Write-Host "  python scripts\download_visdrone.py --splits train val"
 Write-Host "  python scripts\make_tile_dataset.py --split-mode official"
 Write-Host "  python scripts\extract_tile_features.py --feature-mode bitplane-stats --split train --max-images 25"
-Write-Host "  python scripts\train_scout.py --epochs 3 --device cuda"
+Write-Host "  python scripts\train_scout.py --train-features data\tile_features\bitplane_stats_spatial_train.npz --val-features data\tile_features\bitplane_stats_spatial_val.npz --epochs 3 --device cuda"
 Write-Host ""
-Write-Host "See README.md for the full scout + YOLO pipeline commands."
+Write-Host "See README.md for the full pipeline commands."

@@ -148,7 +148,7 @@ The live scout timing shows that feature extraction is currently the main optimi
 ## Next Best Improvements
 
 1. Optimize live scout feature extraction, especially avoiding repeated full-image Python/PIL work.
-2. Train a small CNN or MLP scout on richer tile features if the spatial linear scout is not strong enough.
+2. Improve the current lightweight scout with better feature extraction or calibration before adding new model families.
 3. Add K sweeps for routed YOLO beyond K=8.
 4. Run all-tile YOLO on a larger subset for a better SAHI-like cost/recall reference.
 5. Decide whether YOLO must be fine-tuned on VisDrone for class-aware mAP, or whether class-agnostic smoke recall is enough for the school scope.
