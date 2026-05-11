@@ -20,6 +20,17 @@ For the exact commands verified in the final handoff pass, see `docs/completion_
 
 The compact cache replaced an earlier 1.65 GB cache by removing repeated strings and JSON blobs from every tile record.
 
+Binary-XNOR smoke from clean exported commit `b19ad32`:
+
+```text
+mingw32-make
+python scripts\verify_packed_kernel.py --include-nonbinary
+python scripts\extract_tile_features.py --feature-mode binary-xnor --split val --max-images 1 --out-dir data\tile_features_b19_smoke --progress-every 0
+python scripts\verify_tile_features.py --feature-file data\tile_features_b19_smoke\binary_xnor_val_n1.npz --expect-feature-dim 64 --expect-feature-mode binary-xnor
+```
+
+The one-image binary cache had 49 rows, 64 features, and recorded binary metadata: 64 filters, 3x3 kernel, threshold 0, seed 42, 24 input channels, and weight hash prefix `deedea25a6e1d153`.
+
 ## Tile Coverage
 
 Object-center recall on the full VisDrone val tile labels:

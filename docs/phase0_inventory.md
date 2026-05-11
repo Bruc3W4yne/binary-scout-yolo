@@ -78,6 +78,7 @@ The clean tree used junctions to the existing ignored Windows `data` and `runs` 
 | `evaluate_scout_recall.py --mode oracle-greedy --top-k-values 3 5 8` | Pass | Object recall: K=3 `0.693`, K=5 `0.846`, K=8 `0.953`. |
 | `run_yolo_tiles.py` one-image CUDA smokes | Pass | `full`, `all`, `random`, `prior`, `heuristic`, `oracle-greedy`, and cached `scout` all wrote JSON result files. These are smoke checks, not final performance claims. |
 | `run_yolo_tiles.py --selector scout --warmup-images 1` from clean commit `baf87f3` | Pass | Wrote `smoke_yolo_timing_baf87f3.json` with CUDA-synchronized phase summaries for image load, resize/preprocess, GT parse, scout, YOLO, merge/NMS, match/eval, pipeline latency excluding GT, and wall time. |
+| `extract_tile_features.py --feature-mode binary-xnor --max-images 1` from clean commit `b19ad32` | Pass | Built `kernel.dll`, verified packed kernel, extracted `binary_xnor_val_n1.npz`, and verified binary metadata including filter count, kernel size, threshold, seed, input channels, and weight hash. |
 
 ## Initial Retention Ledger
 
