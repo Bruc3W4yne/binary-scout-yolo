@@ -37,7 +37,15 @@ python scripts\run_yolo_tiles.py --selector scout --crop-source original --top-k
 python scripts\run_yolo_tiles.py --selector scout-live --crop-source original --top-k 8 --split val --max-images 25 --device cuda --weights yolov8n.pt --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt
 ```
 
-Longer K sweep, written as explicit commands instead of a new experiment framework:
+Longer same-subset K sweep, written as explicit commands instead of a new experiment framework.
+Run the K-independent references once:
+
+```powershell
+python scripts\run_yolo_tiles.py --selector full --split val --max-images 100 --device cuda --weights yolov8n.pt
+python scripts\run_yolo_tiles.py --selector all --crop-source original --split val --max-images 100 --device cuda --weights yolov8n.pt
+```
+
+Then sweep the routed selectors:
 
 ```powershell
 foreach ($k in 4,8,12,16,20) {
@@ -46,6 +54,7 @@ foreach ($k in 4,8,12,16,20) {
   python scripts\run_yolo_tiles.py --selector heuristic --crop-source original --top-k $k --split val --max-images 100 --device cuda --weights yolov8n.pt
   python scripts\run_yolo_tiles.py --selector oracle-greedy --crop-source original --top-k $k --split val --max-images 100 --device cuda --weights yolov8n.pt
   python scripts\run_yolo_tiles.py --selector scout --crop-source original --top-k $k --split val --max-images 100 --device cuda --weights yolov8n.pt --features data\tile_features\bitplane_stats_spatial_val.npz --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt
+  python scripts\run_yolo_tiles.py --selector scout-live --crop-source original --top-k $k --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt
 }
 ```
 
