@@ -305,6 +305,7 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
         selected_records: list[dict] = []
         selected_tiles: list[Tile] = []
         detections, yolo_ms = predict_full(model, rgb, args, device)
+        detector_calls = 1
         merge_started = time.perf_counter()
         detections = nms(detections, iou_threshold=args.merge_iou)
         merge_nms_ms = (time.perf_counter() - merge_started) * 1000.0
@@ -329,6 +330,7 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
             scout_ms = (time.perf_counter() - scout_started) * 1000.0
         selected_records = select_tile_records(stem, records, args, rng, scout_scores, tile_scores)
         detections, selected_tiles, yolo_ms, merge_nms_ms = predict_tiles(model, rgb, selected_records, args, device)
+        detector_calls = len(selected_tiles)
         area_fraction = selected_area_fraction(selected_tiles, img_size=args.img_size)
 
     match_started = time.perf_counter()
@@ -343,6 +345,7 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
         "selected_tiles": len(selected_tiles),
         "selected_tile_ids": [tile.tile_id for tile in selected_tiles],
         "selected_area_fraction": area_fraction,
+        "detector_calls": detector_calls,
         "detections": len(detections),
         "latency_ms": pipeline_ms,
         "image_load_ms": image_load_ms,
@@ -403,6 +406,7 @@ def summarize(rows: list[dict], args: argparse.Namespace) -> dict:
         "matched_gt": matched_total,
         "class_agnostic_recall": matched_total / gt_total if gt_total else 0.0,
         "mean_detections": float(np.mean([row["detections"] for row in rows])) if rows else 0.0,
+        "mean_detector_calls": float(np.mean([row["detector_calls"] for row in rows])) if rows else 0.0,
         "mean_selected_tiles": float(np.mean([row["selected_tiles"] for row in rows])) if rows else 0.0,
         "mean_selected_area_fraction": (
             float(np.mean([row["selected_area_fraction"] for row in rows])) if rows else 0.0

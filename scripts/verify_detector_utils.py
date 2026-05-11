@@ -71,6 +71,7 @@ def verify_yolo_timing_summary() -> None:
         {
             "selected_tiles": 8,
             "selected_area_fraction": 0.25,
+            "detector_calls": 8,
             "detections": 2,
             "gt_boxes": 2,
             "matched_gt": 1,
@@ -80,6 +81,7 @@ def verify_yolo_timing_summary() -> None:
         {
             "selected_tiles": 8,
             "selected_area_fraction": 0.50,
+            "detector_calls": 4,
             "detections": 4,
             "gt_boxes": 2,
             "matched_gt": 2,
@@ -89,6 +91,7 @@ def verify_yolo_timing_summary() -> None:
     ]
     summary = summarize(rows, Namespace(selector="scout", top_k=8))
     expect(summary["class_agnostic_recall"] == 0.75, "summary recall should aggregate counts")
+    expect(summary["mean_detector_calls"] == 6.0, "detector call summary mismatch")
     expect(summary["latency_ms"]["mean"] == 19.0, "latency mean should use pipeline latency")
     expect(summary["phase_ms"]["pipeline_ms_excl_gt"]["mean"] == 19.0, "pipeline phase mean mismatch")
     expect(summary["phase_ms"]["gt_parse_ms"]["mean"] == 4.0, "GT parse phase mean mismatch")

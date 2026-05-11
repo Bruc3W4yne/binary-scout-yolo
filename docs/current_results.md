@@ -1,10 +1,12 @@
 # Current Results
 
-Updated after the final Windows RTX 4090 handoff pass.
+Updated after the final Windows RTX 4090 handoff pass, with later source-only notes for schema and feature-path changes.
 
 These are not final paper-quality numbers. They are pipeline validation numbers that show the project is runnable and where the next optimization work should focus.
 
 For the exact commands verified in the final handoff pass, see `docs/completion_audit.md`.
+
+After that handoff, the current source added `detector_calls` to YOLO JSON output and an equivalent default-grid fast path for live bitplane feature extraction. Do not claim updated Windows latency until `scout-live` is rerun on the Windows RTX 4090 machine.
 
 ## Artifacts Verified
 
@@ -105,6 +107,8 @@ One-image CUDA smoke from clean exported commit `3e633d3`, used only to prove th
 
 This one-image YOLO table is a smoke test, not a performance claim. It confirms that `full`, `all`, `random`, `prior`, `heuristic`, `oracle-greedy`, cached `scout`, and `scout-live` all run on Windows/CUDA and write JSON metrics.
 
+These historical JSON files predate the `detector_calls` field. With the current CLI, detector calls are 1 for `full`, 49 for `all`, and the selected crop count for routed selectors.
+
 ## Historical Timing Schema Smoke
 
 Timing schema smoke from clean exported commit `baf87f3`, using cached scout K=8, one warmup image, and one measured val image:
@@ -150,11 +154,11 @@ The current YOLO numbers are final VisDrone accuracy.
 The bitplane-only scout works well.
 ```
 
-The live scout timing shows that feature extraction is currently the main optimization target. Cached routing is useful for isolating detector behavior, but live routing is the honest end-to-end benchmark.
+The historical live scout timing showed that feature extraction was the main optimization target. Cached routing is useful for isolating detector behavior, but live routing is the honest end-to-end benchmark.
 
 ## Next Best Improvements
 
-1. Optimize live scout feature extraction, especially avoiding repeated full-image Python/PIL work.
+1. Rerun `scout-live` on Windows after the source-only feature-extraction fast path and record the updated timing.
 2. Improve the current lightweight scout with better feature extraction or calibration before adding new model families.
 3. Add K sweeps for routed YOLO beyond K=8.
 4. Run all-tile YOLO on a larger subset for a better SAHI-like cost/recall reference.

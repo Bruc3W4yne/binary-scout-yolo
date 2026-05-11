@@ -16,7 +16,7 @@ VisDrone image
 -> top-K tile routing
 -> YOLO on selected crops
 -> coordinate merge/NMS
--> JSON recall, selection, and timing metrics
+-> JSON recall, selection, detector-call, and timing metrics
 ```
 
 The strongest current claim is:
@@ -32,7 +32,7 @@ Do not claim that this beats YOLO overall, is state of the art, is already drone
 | Requirement | Status | Evidence |
 |---|---|---|
 | Windows RTX 4090 target is authoritative | Pass | Final verification ran by SSH on the Windows RTX 4090 machine, not on the Mac. Mac checks were editing/smoke only. |
-| Clean exported repo verification | Pass | A clean Windows tree was exported for the final fast verifier bundle. The heavier data/feature/YOLO evidence came from `3e633d3`; the final cleanup changed docs/setup only. |
+| Clean exported repo verification | Pass | A clean Windows tree was exported for the final fast verifier bundle. The heavier data/feature/YOLO evidence came from `3e633d3`; later source-only changes are limited to equivalent feature extraction, JSON reporting, and docs truth. |
 | Native binary core builds on Windows | Pass | `mingw32-make clean`, `mingw32-make`, and `mingw32-make test` passed. The C test suite reported `55 / 55 passed`. |
 | Packed C/Python wrapper is validated | Pass | `python scripts\verify_packed_kernel.py --include-nonbinary` passed all parity, threshold, shape-guard, and nonbinary 0/255 plane checks. |
 | Python contracts are testable | Pass | `python -m compileall -q src scripts tests` passed. `python -m pytest -q` passed with `4 passed in 2.29s`. |
@@ -40,12 +40,12 @@ Do not claim that this beats YOLO overall, is state of the art, is already drone
 | Feature cache contracts are checked | Pass | `verify_tile_features.py` passed for `data\tile_features\bitplane_stats_spatial_val.npz`, expecting 38 features and `bitplane-stats-spatial`. |
 | Tile-label recall baselines are credible | Pass | Full-val K=8 recall: scout `0.516`, random `0.452 +/- 0.004`, prior `0.469`, oracle-greedy `0.953`. |
 | YOLO router selectors execute | Pass | One-image CUDA smoke from commit `3e633d3` ran `full`, `all`, `random`, `prior`, `heuristic`, `oracle-greedy`, cached `scout`, and `scout-live`, each writing JSON. |
-| Timing separates pipeline phases | Pass | `run_yolo_tiles.py` reports image load, resize/preprocess, ground-truth parse, scout, YOLO, merge/NMS, match/eval, pipeline excluding GT, and wall time summaries. |
+| Timing separates pipeline phases | Pass | `run_yolo_tiles.py` reports detector calls, image load, resize/preprocess, ground-truth parse, scout, YOLO, merge/NMS, match/eval, pipeline excluding GT, and wall time summaries. |
 | Binary-XNOR benchmark is available | Pass | `benchmark_xnor_kernel.py --synthetic --max-images 5 --runs 10 --warmup 2` wrote JSON and measured C XNOR paths against float references. |
 | Claim audit exists | Pass | `docs/final_project_claims.md` separates thesis, defensible claim, binary-XNOR claim, novelty framing, and claims to avoid. |
 | Long benchmark commands are ready | Pass | `docs/evaluation_protocol.md` lists tile-label recall, YOLO smoke, and longer K-sweep commands without adding a new experiment framework. |
 | Stale artifacts are removed | Pass | Legacy planning docs, stale `PROD.md`, stale legacy scripts, out-of-scope full-BNN detector experiment, and obsolete private process notes were removed. |
-| Final external review gate | Pass after fixes | The final review found no core source-code blocker. It rejected command-truth cleanup issues in `README.md`, `setup.ps1`, `docs/current_results.md`, and this audit; those issues were patched before handoff. |
+| Final review gate | Pass after fixes | The final review found no core source-code blocker. It recommended only a narrow source pass: equivalent live feature extraction, detector-call reporting, and docs truth/schema cleanup. |
 
 ## Windows Commands Run
 
@@ -142,6 +142,6 @@ These are not blockers for the implementation handoff:
 
 1. Run larger YOLO sweeps, especially K=4, 8, 12, 16, and 20 over more validation images.
 2. Decide whether the final report needs class-aware VisDrone mAP. If yes, use VisDrone-compatible YOLO weights or fine-tune.
-3. Optimize live scout feature extraction; it is currently the largest latency cost.
+3. Rerun live scout timing on Windows after the source-only feature-extraction fast path.
 4. Train and evaluate full binary-XNOR scout caches if the presentation needs the binary path as a measured scout result, not only a verified feature path.
 5. Use `docs/final_project_claims.md` as the claim boundary when writing slides/report.

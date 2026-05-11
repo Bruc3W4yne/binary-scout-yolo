@@ -23,6 +23,7 @@ def test_tile_contracts() -> None:
     checks.verify_tile_labels()
     checks.verify_parser_and_scaling()
     checks.verify_bitplanes()
+    checks.verify_bitplane_stats_fast_path()
     checks.verify_selected_area()
     checks.verify_split()
 

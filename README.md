@@ -98,7 +98,7 @@ python scripts\run_yolo_tiles.py --selector scout-live --top-k 8 --split val --m
 
 `scout` uses cached tile scores to isolate detector routing. `scout-live` computes bitplane scout features inside the timed path and reports phase timings. `prior`, `heuristic`, and `oracle-greedy` are baselines that keep the scout claim honest. These detector numbers are a pipeline smoke signal, not final VisDrone accuracy: `yolov8n.pt` is COCO-pretrained unless you later fine-tune or replace the weights.
 
-`run_yolo_tiles.py` uses one warmup image by default and prints pipeline latency excluding ground-truth parsing. The JSON output also includes image-load, resize, ground-truth, scout, YOLO, merge/NMS, match/eval, pipeline, and wall-clock timing summaries.
+`run_yolo_tiles.py` uses one warmup image by default and prints pipeline latency excluding ground-truth parsing. The JSON output also includes detector input counts, image-load, resize, ground-truth, scout, YOLO, merge/NMS, match/eval, pipeline, and wall-clock timing summaries. `detector_calls` means detector inputs/crops evaluated, not Python `model.predict()` calls.
 
 ## Data Contract
 

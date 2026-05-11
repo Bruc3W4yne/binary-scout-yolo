@@ -1,9 +1,9 @@
 """
 Scout feature extraction helpers.
 
-The first feature mode is deliberately simple: per-tile RGB and bitplane
-statistics. It is a C-free baseline for validating tile labels and scout
-training before the binary-XNOR feature path is added.
+The main scout feature mode is deliberately small: per-tile RGB and bitplane
+statistics, optionally extended with tile-position features. The native
+binary-XNOR path is kept as a separate feature extractor.
 """
 
 from __future__ import annotations
@@ -21,6 +21,21 @@ BITPLANE_STATS_DIM = 30
 SPATIAL_FEATURE_DIM = 8
 BINARY_STATS_SPATIAL_DIM = BITPLANE_STATS_DIM + SPATIAL_FEATURE_DIM
 BINARY_XNOR_DIM = 64
+_DEFAULT_BLOCK = 80
+_DEFAULT_TILE = 160
+_DEFAULT_IMAGE = 640
+_DEFAULT_BLOCKS = _DEFAULT_IMAGE // _DEFAULT_BLOCK
+_DEFAULT_BLOCK_PIXELS = _DEFAULT_BLOCK * _DEFAULT_BLOCK
+_U8_VALUES = np.arange(256, dtype=np.float32) / 255.0
+_U8_SQ_VALUES = _U8_VALUES * _U8_VALUES
+_U8_BITS = ((np.arange(256, dtype=np.uint16)[:, None] >> np.arange(8, dtype=np.uint16)) & 1).astype(np.float32)
+
+
+def _as_rgb_u8(rgb: np.ndarray) -> np.ndarray:
+    rgb = np.asarray(rgb, dtype=np.uint8)
+    if rgb.ndim != 3 or rgb.shape[2] != 3:
+        raise ValueError(f"rgb must have shape [H, W, 3], got {rgb.shape}")
+    return rgb
 
 
 def _rect_means_chw(values: np.ndarray, tiles: list[Tile]) -> np.ndarray:
@@ -51,11 +66,63 @@ def load_resized_rgb(path: Path, img_size: int = 640) -> np.ndarray:
         return np.asarray(image, dtype=np.uint8)
 
 
-def bitplane_stats_features(rgb: np.ndarray, tiles: list[Tile]) -> np.ndarray:
-    rgb = np.asarray(rgb, dtype=np.uint8)
-    if rgb.ndim != 3 or rgb.shape[2] != 3:
-        raise ValueError(f"rgb must have shape [H, W, 3], got {rgb.shape}")
+def _uses_default_grid(rgb: np.ndarray, tiles: list[Tile]) -> bool:
+    if rgb.shape != (_DEFAULT_IMAGE, _DEFAULT_IMAGE, 3):
+        return False
 
+    for tile in tiles:
+        if tile.x2 - tile.x1 != _DEFAULT_TILE or tile.y2 - tile.y1 != _DEFAULT_TILE:
+            return False
+        if tile.x1 % _DEFAULT_BLOCK or tile.y1 % _DEFAULT_BLOCK:
+            return False
+        last_start = _DEFAULT_IMAGE - _DEFAULT_TILE
+        if not (0 <= tile.x1 <= last_start and 0 <= tile.y1 <= last_start):
+            return False
+    return True
+
+
+def _bitplane_stats_features_default_grid(rgb: np.ndarray, tiles: list[Tile]) -> np.ndarray:
+    if not tiles:
+        return np.empty((0, BITPLANE_STATS_DIM), dtype=np.float32)
+
+    pixels = (
+        np.ascontiguousarray(rgb)
+        .reshape(_DEFAULT_BLOCKS, _DEFAULT_BLOCK, _DEFAULT_BLOCKS, _DEFAULT_BLOCK, 3)
+        .transpose(0, 2, 1, 3, 4)
+        .reshape(_DEFAULT_BLOCKS, _DEFAULT_BLOCKS, _DEFAULT_BLOCK_PIXELS, 3)
+    )
+    bit_means = np.empty((_DEFAULT_BLOCKS, _DEFAULT_BLOCKS, 24), dtype=np.float32)
+    rgb_means = np.empty((_DEFAULT_BLOCKS, _DEFAULT_BLOCKS, 3), dtype=np.float32)
+    rgb_sq_means = np.empty((_DEFAULT_BLOCKS, _DEFAULT_BLOCKS, 3), dtype=np.float32)
+    for row in range(_DEFAULT_BLOCKS):
+        for col in range(_DEFAULT_BLOCKS):
+            for channel in range(3):
+                counts = np.bincount(pixels[row, col, :, channel], minlength=256).astype(np.float32)
+                bit_means[row, col, channel * 8 : (channel + 1) * 8] = counts @ _U8_BITS / _DEFAULT_BLOCK_PIXELS
+                rgb_means[row, col, channel] = counts @ _U8_VALUES / _DEFAULT_BLOCK_PIXELS
+                rgb_sq_means[row, col, channel] = counts @ _U8_SQ_VALUES / _DEFAULT_BLOCK_PIXELS
+
+    rows = np.asarray([tile.y1 // _DEFAULT_BLOCK for tile in tiles], dtype=np.intp)
+    cols = np.asarray([tile.x1 // _DEFAULT_BLOCK for tile in tiles], dtype=np.intp)
+
+    def tile_average(values: np.ndarray) -> np.ndarray:
+        return (
+            values[rows, cols]
+            + values[rows + 1, cols]
+            + values[rows, cols + 1]
+            + values[rows + 1, cols + 1]
+        ) * 0.25
+
+    features = np.empty((len(tiles), BITPLANE_STATS_DIM), dtype=np.float32)
+    features[:, :24] = tile_average(bit_means)
+    tile_rgb_means = tile_average(rgb_means)
+    tile_rgb_sq_means = tile_average(rgb_sq_means)
+    features[:, 24:27] = tile_rgb_means
+    features[:, 27:30] = np.sqrt(np.maximum(tile_rgb_sq_means - tile_rgb_means * tile_rgb_means, 0.0))
+    return features
+
+
+def _bitplane_stats_features_integral(rgb: np.ndarray, tiles: list[Tile]) -> np.ndarray:
     planes = rgb_to_bitplanes(rgb).astype(np.float32)
     rgb_f = rgb.astype(np.float32) / 255.0
     features = np.empty((len(tiles), BITPLANE_STATS_DIM), dtype=np.float32)
@@ -68,6 +135,13 @@ def bitplane_stats_features(rgb: np.ndarray, tiles: list[Tile]) -> np.ndarray:
     features[:, 27:30] = np.sqrt(np.maximum(rgb_sq_means - rgb_means * rgb_means, 0.0))
 
     return features
+
+
+def bitplane_stats_features(rgb: np.ndarray, tiles: list[Tile]) -> np.ndarray:
+    rgb = _as_rgb_u8(rgb)
+    if _uses_default_grid(rgb, tiles):
+        return _bitplane_stats_features_default_grid(rgb, tiles)
+    return _bitplane_stats_features_integral(rgb, tiles)
 
 
 def spatial_tile_features(tiles: list[Tile], img_size: int = 640) -> np.ndarray:
@@ -129,9 +203,7 @@ class BinaryXnorExtractor:
         }
 
     def features(self, rgb: np.ndarray, tiles: list[Tile]) -> np.ndarray:
-        rgb = np.asarray(rgb, dtype=np.uint8)
-        if rgb.ndim != 3 or rgb.shape[2] != 3:
-            raise ValueError(f"rgb must have shape [H, W, 3], got {rgb.shape}")
+        rgb = _as_rgb_u8(rgb)
 
         planes = rgb_to_bitplanes(rgb)
         if planes.shape[0] != self.layer.n_ch:

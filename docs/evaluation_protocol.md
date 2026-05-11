@@ -44,6 +44,8 @@ foreach ($k in 4,8,12,16,20) {
 
 Report class-agnostic detector recall, selected tile count, selected area fraction, detector calls, mean latency, p95 latency, and the timing phase breakdown written by `run_yolo_tiles.py`.
 
+The JSON rows include `detector_calls`; the summary includes `mean_detector_calls`. This counts detector inputs/crops evaluated: 1 for full-image YOLO, 49 for all tiles, and the selected crop count for routed modes. It does not count Python `model.predict()` invocations.
+
 The phase `pipeline_ms_excl_gt` is the main latency number. Ground-truth parsing and match/eval timings are reported for measurement transparency, not deployment latency claims.
 
 ## Report Table

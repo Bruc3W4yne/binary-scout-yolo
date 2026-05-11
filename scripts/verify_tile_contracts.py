@@ -26,6 +26,7 @@ from preprocess import (  # noqa: E402
     scale_boxes_to_resized,
     selected_area_fraction,
 )
+from scout import bitplane_stats_features, _bitplane_stats_features_integral  # noqa: E402
 
 
 def assert_close(actual: float, expected: float, name: str, eps: float = 1e-9) -> None:
@@ -120,6 +121,24 @@ def verify_bitplanes() -> None:
         raise AssertionError("bitplanes do not reconstruct original RGB")
 
 
+def verify_bitplane_stats_fast_path() -> None:
+    rng = np.random.default_rng(123)
+    tiles = make_tiles(640, 160, 80)
+    checker = ((np.indices((640, 640)).sum(axis=0) % 2) * 255).astype(np.uint8)
+    cases = [
+        ("random", rng.integers(0, 256, size=(640, 640, 3), dtype=np.uint8)),
+        ("zeros", np.zeros((640, 640, 3), dtype=np.uint8)),
+        ("full", np.full((640, 640, 3), 255, dtype=np.uint8)),
+        ("checker", np.stack([checker, np.flipud(checker), checker], axis=2)),
+    ]
+    for name, rgb in cases:
+        fast = bitplane_stats_features(rgb, tiles)
+        reference = _bitplane_stats_features_integral(rgb, tiles)
+        if not np.allclose(fast, reference, atol=1e-5, rtol=1e-6):
+            diff = float(np.max(np.abs(fast - reference)))
+            raise AssertionError(f"{name} bitplane stats fast path drifted by {diff}")
+
+
 def verify_selected_area() -> None:
     tiles = make_tiles(640, 160, 80)
     area = selected_area_fraction([tiles[0], tiles[1]], img_size=640)
@@ -145,6 +164,7 @@ def main() -> int:
         ("center_in_tile_labels", verify_tile_labels),
         ("visdrone_parser_and_scaling", verify_parser_and_scaling),
         ("rgb_bitplanes_roundtrip", verify_bitplanes),
+        ("bitplane_stats_fast_path", verify_bitplane_stats_fast_path),
         ("selected_area_union", verify_selected_area),
         ("deterministic_split", verify_split),
     ]
