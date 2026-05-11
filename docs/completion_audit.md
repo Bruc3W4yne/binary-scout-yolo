@@ -1,10 +1,25 @@
 # Completion Audit
 
 Generated May 11, 2026 after the Windows-first final verification pass.
+Updated May 11, 2026 after the Pro-driven original-crop alignment pass through commit `d63264f`.
 
 This is the handoff truth for the current repo. The project is not a finished research paper, but it is a runnable CLI implementation of the selective-tiling pipeline with documented Windows/CUDA smoke evidence and clear limits.
 
-Post-audit source note: a later alignment pass added `--crop-source original` for tiled YOLO and small/medium/large recall fields. The Windows numbers below predate that pass, so use them as wiring evidence only. Final report numbers should be rerun from the current source.
+Post-audit source note: a later alignment pass added `--crop-source original` for tiled YOLO, small/medium/large recall fields, exact current benchmark commands, and feature-mode-specific scout recall output names. The Windows numbers below predate that pass, so use them as wiring evidence only. Final report numbers should be rerun from the current source.
+
+## Current Source Alignment Pass
+
+This pass addressed Pro's two core objections: tiled detector crops previously came from the already resized 640x640 canvas, and binary-XNOR scout evidence needed a clear command path before it could be claimed.
+
+| Requirement | Current status | Evidence |
+|---|---|---|
+| Original-resolution tiled detector crops | Implemented | `scripts/run_yolo_tiles.py` supports `--crop-source resized|original`; original mode selects on the 640 grid, crops the original image, and projects detections back to the 640 evaluation canvas. |
+| Coordinate round-trip tests | Verified on Mac | `scripts/verify_detector_utils.py` covers 640 tile to original crop mapping, identity 640x640 behavior, and fake-model original-crop detection projection. |
+| Small-object recall reporting | Implemented | `src/detector.py` reports small/medium/large GT counts, matched counts, and object recall; `run_yolo_tiles.py` aggregates them into JSON summaries. |
+| Same-subset Windows benchmark protocol | Documented | `docs/evaluation_protocol.md` lists full, all, random, prior, heuristic, oracle-greedy, cached scout, and live scout commands, including K sweeps and detector-call/latency fields. |
+| Binary-XNOR cached scout comparison path | Documented and guarded | `extract_tile_features.py`, `train_scout.py`, and `evaluate_scout_recall.py` support binary-XNOR feature caches; scout recall outputs now use feature metadata so binary-XNOR results do not overwrite bitplane/spatial results. |
+| Current Mac verification | Passed | `compileall`, detector/routing/tile/kernel verifiers, `make test`, `verify_packed_kernel.py --include-nonbinary`, and `git diff --check` passed after the alignment pass. |
+| Current Windows CUDA benchmarks | Not rerun yet | Intentionally deferred while the Windows PC is in use. The high-resolution and latency claims still require current-source Windows runs. |
 
 ## Final Status
 
