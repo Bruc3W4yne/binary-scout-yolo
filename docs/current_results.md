@@ -1,6 +1,6 @@
 # Current Results
 
-Generated on the Windows RTX 4090 machine during the first end-to-end implementation pass.
+Updated after the final Windows RTX 4090 handoff pass.
 
 These are not final paper-quality numbers. They are pipeline validation numbers that show the project is runnable and where the next optimization work should focus.
 
@@ -20,7 +20,9 @@ For the exact commands verified in the final handoff pass, see `docs/completion_
 
 The compact cache replaced an earlier 1.65 GB cache by removing repeated strings and JSON blobs from every tile record.
 
-Binary-XNOR smoke from clean exported commit `b19ad32`:
+## Historical Binary-XNOR Smoke
+
+Earlier binary-XNOR smoke from clean exported commit `b19ad32`. The final native build and packed-kernel verifier were re-run during the `3e633d3` handoff pass; this older one-image feature-cache result is retained only as binary feature-extraction evidence.
 
 ```text
 mingw32-make
@@ -47,9 +49,9 @@ Interpretation:
 
 The first bitplane-only linear scout was worse than random. Adding cheap spatial tile features made the scout useful at tight tile budgets, especially K=4 and K=8. A tiny 64-hidden-unit MLP improves coverage further while staying lightweight. There is still large headroom to the oracle upper bound.
 
-### Selector Baseline Pass
+### Historical Selector Baseline Pass
 
-Verified on the Windows RTX 4090 machine from clean exported commit `c1418b8` against the full val feature cache:
+Verified on the Windows RTX 4090 machine from clean exported commit `c1418b8` against the full val feature cache. The final handoff pass re-ran the K=8 scout/random/prior/oracle-greedy checks from commit `3e633d3`; see `docs/completion_audit.md`.
 
 | Method | K=3 | K=5 | K=8 | Selected Area at K=8 |
 |---|---:|---:|---:|---:|
@@ -64,7 +66,7 @@ Interpretation:
 
 The spatial MLP scout is better than random, a simple train-split spatial prior, and the content-only heuristic at K=8. The gap between scout K=8 recall `0.516` and greedy-oracle K=8 recall `0.953` is useful: it says the routing problem is not saturated, and future scout work has real headroom.
 
-## YOLO Routing Smoke Results
+## Historical YOLO Routing Smoke Results
 
 Class-agnostic recall against VisDrone boxes with COCO-pretrained `yolov8n.pt`.
 
@@ -86,19 +88,24 @@ Live spatial MLP scout phase timing on the 25-image smoke run:
 | YOLO selected tiles | 31.0 ms |
 | Merge | 1.0 ms |
 
-Tiny one-image CUDA smoke from clean exported commit `c1418b8`, used only to prove the new selectors execute end to end:
+## Final Handoff YOLO Smoke
+
+One-image CUDA smoke from clean exported commit `3e633d3`, used only to prove the selectors execute end to end after the cleanup pass:
 
 | Method | Images | Tiles | Area | Recall | Mean Latency |
 |---|---:|---:|---:|---:|---:|
-| Full-image YOLO | 1 | 0 | 1.000 | 0.024 | 405.1 ms |
-| All tiles | 1 | 49 | 1.000 | 0.102 | 494.8 ms |
-| Random K=8 | 1 | 8 | 0.391 | 0.063 | 390.2 ms |
-| Spatial prior K=8 | 1 | 8 | 0.250 | 0.079 | 388.5 ms |
-| Content heuristic K=8 | 1 | 8 | 0.328 | 0.016 | 517.7 ms |
-| Oracle-greedy K=8 | 1 | 8 | 0.391 | 0.087 | 376.7 ms |
-| Spatial MLP scout K=8, cached scores | 1 | 8 | 0.234 | 0.102 | 398.3 ms |
+| Full-image YOLO | 1 | 0 | 1.000 | 0.024 | 29.1 ms |
+| All tiles | 1 | 49 | 1.000 | 0.102 | 114.7 ms |
+| Random K=8 | 1 | 8 | 0.391 | 0.063 | 33.3 ms |
+| Spatial prior K=8 | 1 | 8 | 0.250 | 0.079 | 33.2 ms |
+| Content heuristic K=8 | 1 | 8 | 0.328 | 0.016 | 177.9 ms |
+| Oracle-greedy K=8 | 1 | 8 | 0.391 | 0.087 | 32.9 ms |
+| Spatial MLP scout K=8, cached scores | 1 | 8 | 0.234 | 0.102 | 36.1 ms |
+| Spatial MLP scout K=8, live scores | 1 | 8 | 0.234 | 0.102 | 179.0 ms |
 
-This one-image YOLO table is a smoke test, not a performance claim. It confirms that `full`, `all`, `random`, `prior`, `heuristic`, `oracle-greedy`, and cached `scout` all run on Windows/CUDA and write JSON metrics.
+This one-image YOLO table is a smoke test, not a performance claim. It confirms that `full`, `all`, `random`, `prior`, `heuristic`, `oracle-greedy`, cached `scout`, and `scout-live` all run on Windows/CUDA and write JSON metrics.
+
+## Historical Timing Schema Smoke
 
 Timing schema smoke from clean exported commit `baf87f3`, using cached scout K=8, one warmup image, and one measured val image:
 

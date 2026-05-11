@@ -59,7 +59,20 @@ python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_s
 python scripts\render_scout_heatmap.py --features data\tile_features\bitplane_stats_spatial_val.npz --checkpoint runs\scout_spatial_mlp\scout_bitplane_stats_spatial.pt --mode scout --top-k 8
 ```
 
-For a quick smoke run, add `--max-images 25`; limited outputs are written with an `_n25` suffix so they cannot be mistaken for full-split caches.
+Small feature/training smoke:
+
+```powershell
+python scripts\extract_tile_features.py --feature-mode bitplane-stats --split train --max-images 25
+python scripts\extract_tile_features.py --feature-mode bitplane-stats --split val --max-images 25
+python scripts\add_spatial_features.py --features data\tile_features\bitplane_stats_train_n25.npz
+python scripts\add_spatial_features.py --features data\tile_features\bitplane_stats_val_n25.npz
+python scripts\verify_tile_features.py --feature-file data\tile_features\bitplane_stats_spatial_train_n25.npz --expect-feature-dim 38 --expect-feature-mode bitplane-stats-spatial
+python scripts\verify_tile_features.py --feature-file data\tile_features\bitplane_stats_spatial_val_n25.npz --expect-feature-dim 38 --expect-feature-mode bitplane-stats-spatial
+python scripts\train_scout.py --train-features data\tile_features\bitplane_stats_spatial_train_n25.npz --val-features data\tile_features\bitplane_stats_spatial_val_n25.npz --out-dir runs\scout_spatial_mlp_n25 --hidden-dim 64 --epochs 3 --device cuda
+python scripts\evaluate_scout_recall.py --features data\tile_features\bitplane_stats_spatial_val_n25.npz --checkpoint runs\scout_spatial_mlp_n25\scout_bitplane_stats_spatial.pt --mode scout --top-k-values 4 8 --out data\results\smoke_recall_scout_n25.json
+```
+
+Only the commands that accept `--max-images` use it. Limited feature outputs are written with an `_n25` suffix so they cannot be mistaken for full-split caches.
 
 Extract binary-XNOR scout features:
 
