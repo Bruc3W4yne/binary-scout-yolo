@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from binary_layer import BinaryConvLayer
+from heatmap_scout import (
+    BinaryConv2d,
+    HeatmapScout,
+    load_checkpoint,
+    record_tile,
+    rgb_to_msb_planes,
+    tile_logits_from_heatmap,
+)
+from preprocess import Tile
+
+
+@dataclass
+class _Block:
+    conv: BinaryConvLayer
+    bn_weight: np.ndarray
+    bn_bias: np.ndarray
+    bn_mean: np.ndarray
+    bn_std: np.ndarray
+
+
+def _signed_weights(module: BinaryConv2d) -> np.ndarray:
+    weights = module.weight.detach().cpu().numpy()
+    return np.where(weights >= 0.0, np.int8(1), np.int8(-1))
+
+
+def _max_pool2x2(x: np.ndarray) -> np.ndarray:
+    c, h, w = x.shape
+    if h % 2 or w % 2:
+        raise ValueError(f"expected even spatial dimensions for 2x2 pool, got {(h, w)}")
+    return x.reshape(c, h // 2, 2, w // 2, 2).max(axis=(2, 4))
+
+
+def _as_bits(x: np.ndarray) -> np.ndarray:
+    return (x >= 0.0).astype(np.uint8, copy=False)
+
+
+class NativeXnorHeatmapScout:
+    def __init__(self, model: HeatmapScout):
+        if model.variant != "ste":
+            raise ValueError("native XNOR heatmap scout requires a STE checkpoint")
+        model = model.cpu().eval()
+        self.blocks = [_build_block(block) for block in model.blocks]
+        self.head_weight = model.head.weight.detach().cpu().numpy()[0, :, 0, 0].astype(np.float32)
+        self.head_bias = float(model.head.bias.detach().cpu().numpy()[0]) if model.head.bias is not None else 0.0
+
+    def logits(self, msb_planes: np.ndarray) -> tuple[np.ndarray, dict[str, float]]:
+        x = _as_bits(np.asarray(msb_planes, dtype=np.float32))
+        timing = {"scout_pack_ms": 0.0, "scout_xnor_kernel_ms": 0.0, "scout_heatmap_postprocess_ms": 0.0}
+
+        for block in self.blocks:
+            started = time.perf_counter()
+            packed = block.conv.pack_input(x)
+            timing["scout_pack_ms"] += (time.perf_counter() - started) * 1000.0
+
+            started = time.perf_counter()
+            scores = block.conv.forward_packed(packed, zero_padding=True).astype(np.float32, copy=False)
+            timing["scout_xnor_kernel_ms"] += (time.perf_counter() - started) * 1000.0
+
+            started = time.perf_counter()
+            scores = (scores - block.bn_mean[:, None, None]) / block.bn_std[:, None, None]
+            scores = scores * block.bn_weight[:, None, None] + block.bn_bias[:, None, None]
+            x = _max_pool2x2(np.clip(scores, -1.0, 1.0))
+            timing["scout_heatmap_postprocess_ms"] += (time.perf_counter() - started) * 1000.0
+            if block is not self.blocks[-1]:
+                x = _as_bits(x)
+
+        started = time.perf_counter()
+        logits = np.tensordot(self.head_weight, x.astype(np.float32, copy=False), axes=(0, 0)) + self.head_bias
+        timing["scout_heatmap_head_ms"] = (time.perf_counter() - started) * 1000.0
+        return logits[None, None].astype(np.float32, copy=False), timing
+
+
+def _build_block(block: torch.nn.Module) -> _Block:
+    conv = block.conv
+    bn = block.bn
+    if not isinstance(conv, BinaryConv2d):
+        raise ValueError("native XNOR heatmap scout can only export BinaryConv2d blocks")
+    weights = _signed_weights(conv)
+    layer = BinaryConvLayer(
+        n_filters=weights.shape[0],
+        n_ch=weights.shape[1],
+        kH=weights.shape[2],
+        kW=weights.shape[3],
+    )
+    layer.set_weights(weights)
+    return _Block(
+        conv=layer,
+        bn_weight=bn.weight.detach().cpu().numpy().astype(np.float32),
+        bn_bias=bn.bias.detach().cpu().numpy().astype(np.float32),
+        bn_mean=bn.running_mean.detach().cpu().numpy().astype(np.float32),
+        bn_std=np.sqrt(bn.running_var.detach().cpu().numpy().astype(np.float32) + float(bn.eps)),
+    )
+
+
+def load_xnor_live_checkpoint(path: Path) -> dict:
+    model, checkpoint = load_checkpoint(path, map_location="cpu")
+    checkpoint["model"] = NativeXnorHeatmapScout(model)
+    checkpoint["route"] = "xnor-heatmap-live"
+    return checkpoint
+
+
+def live_xnor_heatmap_scores(
+    rgb: np.ndarray,
+    records: list[dict],
+    checkpoint: dict,
+) -> tuple[dict[tuple[str, int], float], dict[str, float], str]:
+    tiles = [Tile(**{k: int(v) for k, v in record_tile(record).items()}) for record in sorted(records, key=lambda item: int(item["tile_id"]))]
+    timing: dict[str, float] = {}
+
+    started = time.perf_counter()
+    planes = rgb_to_msb_planes(rgb)
+    timing["scout_heatmap_preprocess_ms"] = (time.perf_counter() - started) * 1000.0
+
+    logits, model_timing = checkpoint["model"].logits(planes)
+    timing.update(model_timing)
+
+    started = time.perf_counter()
+    scores = tile_logits_from_heatmap(torch.from_numpy(logits), tiles).squeeze(0).numpy()
+    timing["scout_heatmap_tile_score_ms"] = (time.perf_counter() - started) * 1000.0
+
+    stem = records[0]["stem"]
+    return {(stem, tile.tile_id): float(score) for tile, score in zip(tiles, scores)}, timing, str(checkpoint["route"])

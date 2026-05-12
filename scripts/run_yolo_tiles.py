@@ -55,6 +55,10 @@ from scout import (  # noqa: E402
     bitplane_stats_features,
     spatial_tile_features,
 )
+from xnor_heatmap_scout import (  # noqa: E402
+    live_xnor_heatmap_scores,
+    load_xnor_live_checkpoint,
+)
 
 
 LIVE_SCOUT_PHASES = [
@@ -68,6 +72,8 @@ LIVE_SCOUT_PHASES = [
     "spatial",
     "heatmap_preprocess",
     "heatmap_model",
+    "heatmap_postprocess",
+    "heatmap_head",
     "heatmap_tile_score",
     "mlp",
     "topk",
@@ -138,11 +144,22 @@ def device_name(device) -> str:
 
 
 def is_live_scout_selector(selector: str) -> bool:
-    return selector in {"scout-live", "binary-xnor-live", "learned-heatmap", "learned-heatmap-live"}
+    return selector in {
+        "scout-live",
+        "binary-xnor-live",
+        "learned-heatmap",
+        "learned-heatmap-live",
+        "xnor-heatmap-live",
+        "learned-xnor-heatmap-live",
+    }
 
 
 def is_heatmap_selector(selector: str) -> bool:
-    return selector in {"learned-heatmap", "learned-heatmap-live"}
+    return selector in {"learned-heatmap", "learned-heatmap-live", "xnor-heatmap-live", "learned-xnor-heatmap-live"}
+
+
+def is_xnor_heatmap_selector(selector: str) -> bool:
+    return selector in {"xnor-heatmap-live", "learned-xnor-heatmap-live"}
 
 
 def sync_cuda(device) -> None:
@@ -456,7 +473,13 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
         area_fraction = 1.0
     else:
         if is_live_scout_selector(args.selector):
-            if is_heatmap_selector(args.selector):
+            if is_xnor_heatmap_selector(args.selector):
+                scout_scores, live_scout_timing, scout_route = live_xnor_heatmap_scores(
+                    rgb,
+                    records,
+                    args.scout_checkpoint,
+                )
+            elif is_heatmap_selector(args.selector):
                 scout_scores, live_scout_timing, scout_route = live_heatmap_scores(
                     rgb,
                     records,
@@ -467,8 +490,10 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
                 scout_scores, live_scout_timing, scout_route = live_scout_scores(rgb, records, args.scout_checkpoint)
             if args.selector == "binary-xnor-live" and not str(scout_route).startswith("binary-xnor"):
                 raise ValueError("--selector binary-xnor-live requires a binary-xnor checkpoint")
-            if is_heatmap_selector(args.selector) and not str(scout_route).startswith("learned-heatmap"):
+            if args.selector in {"learned-heatmap", "learned-heatmap-live"} and not str(scout_route).startswith("learned-heatmap"):
                 raise ValueError(f"--selector {args.selector} requires a learned heatmap checkpoint")
+            if is_xnor_heatmap_selector(args.selector) and scout_route != "xnor-heatmap-live":
+                raise ValueError("--selector xnor-heatmap-live requires a STE heatmap checkpoint")
             live_scout_timing["scout_resize_ms"] = resize_preprocess_ms
         tile_scores = None
         if args.selector == "heuristic":
@@ -648,6 +673,8 @@ def parse_args() -> argparse.Namespace:
             "binary-xnor-live",
             "learned-heatmap",
             "learned-heatmap-live",
+            "xnor-heatmap-live",
+            "learned-xnor-heatmap-live",
         ],
         default="full",
     )
@@ -699,11 +726,12 @@ def main() -> int:
             if args.checkpoint is None:
                 raise ValueError(f"--selector {args.selector} requires --checkpoint")
             args.scout_device = torch_device_arg(args.device)
-            args.scout_checkpoint = (
-                load_heatmap_checkpoint(args.checkpoint, args.scout_device)
-                if is_heatmap_selector(args.selector)
-                else load_scout_checkpoint(args.checkpoint)
-            )
+            if is_xnor_heatmap_selector(args.selector):
+                args.scout_checkpoint = load_xnor_live_checkpoint(args.checkpoint)
+            elif is_heatmap_selector(args.selector):
+                args.scout_checkpoint = load_heatmap_checkpoint(args.checkpoint, args.scout_device)
+            else:
+                args.scout_checkpoint = load_scout_checkpoint(args.checkpoint)
         if args.selector == "prior":
             args.prior_scores = prior_from_records(read_jsonl(args.tile_dir / f"{args.prior_split}_tiles.jsonl"))
 

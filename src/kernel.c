@@ -352,6 +352,64 @@ KERNEL_EXPORT int xnor_multi_filter_conv(
     return 0;
 }
 
+KERNEL_EXPORT int xnor_multi_filter_conv_zero_pad(
+    const uint64_t *input,
+    const uint64_t *weights,
+    int32_t        *output,
+    int rows, int cols,
+    int kH, int kW,
+    int n_ch,
+    int n_filters)
+{
+    if (!input || !weights || !output)       return -1;
+    if (rows < 1 || cols < 1)               return -1;
+    if (kH < 1   || kW < 1)                 return -1;
+    if (kH % 2 == 0 || kW % 2 == 0)         return -1;
+    if (n_ch < 1 || n_ch > 64)              return -1;
+    if (n_filters < 1)                       return -1;
+
+    uint64_t mask      = (n_ch == 64) ? UINT64_MAX : ((uint64_t)1 << n_ch) - 1;
+    int kernel_area    = kH * kW;
+    int padH           = kH / 2;
+    int padW           = kW / 2;
+    size_t frame_size  = (size_t)rows * (size_t)cols;
+    size_t kernel_size = (size_t)kH * (size_t)kW;
+
+    if (kernel_area > 128) return -1;
+
+    #ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+    #endif
+    for (int r = 0; r < rows; r++) {
+        uint64_t patches[128];
+        uint8_t valid[128];
+        for (int c = 0; c < cols; c++) {
+            int k = 0;
+            for (int kr = 0; kr < kH; kr++) {
+                for (int kc = 0; kc < kW; kc++) {
+                    int ir = r + kr - padH;
+                    int ic = c + kc - padW;
+                    uint8_t inside = (uint8_t)(ir >= 0 && ir < rows && ic >= 0 && ic < cols);
+                    valid[k] = inside;
+                    patches[k++] = inside ? input[(size_t)ir * (size_t)cols + (size_t)ic] & mask : 0u;
+                }
+            }
+
+            for (int f = 0; f < n_filters; f++) {
+                const uint64_t *w = weights + (size_t)f * kernel_size;
+                int32_t score = 0;
+                for (int kk = 0; kk < kernel_area; kk++) {
+                    if (!valid[kk]) continue;
+                    int32_t popcount = __builtin_popcountll(~(patches[kk] ^ w[kk]) & mask);
+                    score += 2 * popcount - n_ch;
+                }
+                output[(size_t)f * frame_size + (size_t)r * (size_t)cols + (size_t)c] = score;
+            }
+        }
+    }
+    return 0;
+}
+
 
 /* --------------------------------------------------------------------------
  * float32_conv_nch_u8

@@ -31,6 +31,9 @@ from routing import (  # noqa: E402
     select_records_oracle_greedy,
 )
 from scout import bitplane_stats_features  # noqa: E402
+from xnor_heatmap_scout import live_xnor_heatmap_scores, load_xnor_live_checkpoint  # noqa: E402
+
+XNOR_HEATMAP_MODES = {"xnor-heatmap-live", "learned-xnor-heatmap-live"}
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -108,8 +111,17 @@ def summarize_ms(rows: list[dict[str, float]]) -> dict[str, dict[str, float]]:
     return out
 
 
-def learned_scores(rgb: np.ndarray, records: list[dict], checkpoint: dict, device: torch.device) -> tuple[dict[int, float], dict[str, float], str]:
-    scores, timing, route = live_heatmap_scores(rgb, records, checkpoint, device=device)
+def learned_scores(
+    rgb: np.ndarray,
+    records: list[dict],
+    checkpoint: dict,
+    device: torch.device,
+    xnor: bool = False,
+) -> tuple[dict[int, float], dict[str, float], str]:
+    if xnor:
+        scores, timing, route = live_xnor_heatmap_scores(rgb, records, checkpoint)
+    else:
+        scores, timing, route = live_heatmap_scores(rgb, records, checkpoint, device=device)
     stem = records[0]["stem"]
     by_tile = {tile_id: score for (score_stem, tile_id), score in scores.items() if score_stem == stem}
     timing["scout_total_ms"] = sum(float(value) for value in timing.values())
@@ -177,12 +189,18 @@ def evaluate_groups(
 
         scores = None
         rgb = None
-        if args.mode in {"learned-heatmap", "learned-heatmap-live", "heuristic"}:
+        if args.mode in {"learned-heatmap", "learned-heatmap-live", "heuristic", *XNOR_HEATMAP_MODES}:
             rgb = load_resized_rgb(records[0])
-        if args.mode in {"learned-heatmap", "learned-heatmap-live"}:
+        if args.mode in {"learned-heatmap", "learned-heatmap-live", *XNOR_HEATMAP_MODES}:
             if checkpoint is None:
                 raise ValueError("--mode learned-heatmap requires --checkpoint")
-            scores, timing, route = learned_scores(rgb, records, checkpoint, args.scout_device)
+            scores, timing, route = learned_scores(
+                rgb,
+                records,
+                checkpoint,
+                args.scout_device,
+                xnor=args.mode in XNOR_HEATMAP_MODES,
+            )
             timing_rows.append(timing)
         elif args.mode == "heuristic":
             scores, timing, route = heuristic_tile_scores(rgb, records)
@@ -252,7 +270,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument(
         "--mode",
-        choices=["learned-heatmap", "learned-heatmap-live", "heuristic", "random", "prior", "oracle-count", "oracle-greedy"],
+        choices=[
+            "learned-heatmap",
+            "learned-heatmap-live",
+            "xnor-heatmap-live",
+            "learned-xnor-heatmap-live",
+            "heuristic",
+            "random",
+            "prior",
+            "oracle-count",
+            "oracle-greedy",
+        ],
         default="learned-heatmap",
     )
     parser.add_argument("--top-k-values", type=int, nargs="+", default=[8, 12])
@@ -279,10 +307,14 @@ def main() -> int:
 
         args.scout_device = torch_device_arg(args.device)
         checkpoint = None
-        if args.mode in {"learned-heatmap", "learned-heatmap-live"}:
+        if args.mode in {"learned-heatmap", "learned-heatmap-live", *XNOR_HEATMAP_MODES}:
             if args.checkpoint is None:
                 raise ValueError("--mode learned-heatmap requires --checkpoint")
-            checkpoint = load_live_checkpoint(args.checkpoint, args.scout_device)
+            checkpoint = (
+                load_xnor_live_checkpoint(args.checkpoint)
+                if args.mode in XNOR_HEATMAP_MODES
+                else load_live_checkpoint(args.checkpoint, args.scout_device)
+            )
 
         priors = None
         if args.mode == "prior":

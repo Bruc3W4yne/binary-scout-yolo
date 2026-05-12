@@ -156,18 +156,20 @@ class BinaryConvLayer:
     # Forward pass
     # ------------------------------------------------------------------
 
-    def forward_packed(self, input_packed: np.ndarray) -> np.ndarray:
+    def forward_packed(self, input_packed: np.ndarray, zero_padding: bool = False) -> np.ndarray:
         """
         Apply all filters to an already packed [H, W] uint64 input.
 
         This is the same native kernel used by forward(), exposed so live
         benchmarks can time packing and XNOR-popcount separately.
+        Set zero_padding=True to match PyTorch Conv2d padding semantics.
         """
         input_packed = np.asarray(input_packed)
         if input_packed.ndim != 2:
             raise ValueError(f"Expected [H, W] packed input, got shape {input_packed.shape}")
 
-        return kw.xnor_multi_filter_conv(
+        conv = kw.xnor_multi_filter_conv_zero_pad if zero_padding else kw.xnor_multi_filter_conv
+        return conv(
             input_packed,
             self.pack_all_weights(),
             self.kH,
@@ -176,7 +178,7 @@ class BinaryConvLayer:
             self.n_filters,
         )
 
-    def forward(self, planes: np.ndarray) -> np.ndarray:
+    def forward(self, planes: np.ndarray, zero_padding: bool = False) -> np.ndarray:
         """
         Apply all n_filters XNOR-Popcount convolutions to the input planes.
 
@@ -200,7 +202,7 @@ class BinaryConvLayer:
             raise ValueError(f"Expected {self.n_ch} input channels, got {planes.shape[0]}")
 
         input_packed = self.pack_input(planes)
-        return self.forward_packed(input_packed)
+        return self.forward_packed(input_packed, zero_padding=zero_padding)
 
     def apply_threshold(self, scores: np.ndarray, threshold: int = 0) -> np.ndarray:
         """

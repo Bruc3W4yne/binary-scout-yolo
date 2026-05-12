@@ -189,6 +189,16 @@ def _load():
             ctypes.c_int, ctypes.c_int,   # n_ch, n_filters
         ]
 
+        _lib.xnor_multi_filter_conv_zero_pad.restype = ctypes.c_int
+        _lib.xnor_multi_filter_conv_zero_pad.argtypes = [
+            ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.c_int, ctypes.c_int,
+            ctypes.c_int, ctypes.c_int,
+            ctypes.c_int, ctypes.c_int,
+        ]
+
         # int float32_conv_nch_u8(uint8*, float*, float*, int, int, int, int, int)
         _lib.float32_conv_nch_u8.restype = ctypes.c_int
         _lib.float32_conv_nch_u8.argtypes = [
@@ -376,6 +386,42 @@ def xnor_multi_filter_conv(
     )
     if rc != 0:
         raise ValueError(f"xnor_multi_filter_conv returned {rc}")
+    return output
+
+
+def xnor_multi_filter_conv_zero_pad(
+    input_arr: np.ndarray,
+    weights_arr: np.ndarray,
+    kH: int, kW: int,
+    n_ch: int,
+    n_filters: int,
+) -> np.ndarray:
+    """
+    Multi-filter XNOR-Popcount convolution with PyTorch-style zero padding.
+
+    In-bounds binary values are interpreted as ±1. Out-of-bounds padding
+    contributes 0, matching torch.nn.functional.conv2d(..., padding=...).
+    """
+    lib = _load()
+    kH, kW = _require_kernel(kH, kW)
+    n_ch = _require_channels(n_ch, 64)
+    n_filters = _require_int("n_filters", n_filters, max_value=_C_INT_MAX)
+    input_arr = _as_c_array("input_arr", input_arr, np.uint64, ndim=2)
+    weights_arr = _as_c_array("weights_arr", weights_arr, np.uint64, ndim=3)
+    _require_shape("weights_arr", weights_arr, (n_filters, kH, kW))
+    rows, cols = input_arr.shape
+    _require_c_int_product("rows*cols", rows, cols)
+    output = np.empty((n_filters, rows, cols), dtype=np.int32)
+    rc = lib.xnor_multi_filter_conv_zero_pad(
+        input_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_uint64)),
+        weights_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_uint64)),
+        output.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
+        ctypes.c_int(rows), ctypes.c_int(cols),
+        ctypes.c_int(kH), ctypes.c_int(kW),
+        ctypes.c_int(n_ch), ctypes.c_int(n_filters),
+    )
+    if rc != 0:
+        raise ValueError(f"xnor_multi_filter_conv_zero_pad returned {rc}")
     return output
 
 

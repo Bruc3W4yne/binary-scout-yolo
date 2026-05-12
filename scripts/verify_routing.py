@@ -112,6 +112,8 @@ def verify_learned_heatmap_selector_aliases() -> None:
     expect(is_live_scout_selector("learned-heatmap"), "learned-heatmap should be a live scout selector")
     expect(is_live_scout_selector("learned-heatmap-live"), "learned-heatmap-live should be a live scout selector")
     expect(is_heatmap_selector("learned-heatmap-live"), "heatmap selector alias should be recognized")
+    expect(is_live_scout_selector("xnor-heatmap-live"), "native XNOR heatmap should be a live scout selector")
+    expect(is_heatmap_selector("xnor-heatmap-live"), "native XNOR heatmap should be a heatmap selector")
 
     records = [
         {"stem": "image_a", "tile_id": 0},
