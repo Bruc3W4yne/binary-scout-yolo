@@ -10,6 +10,11 @@ data/
 # ── Training outputs ────────────────────────────────────────────────────────
 runs/
 
+# ── Generated benchmark/export outputs ──────────────────────────────────────
+artifacts/scouts/
+artifacts/benchmarks/*.json
+!artifacts/benchmarks/xnor_heatmap_alignment_2026-05-12.json
+
 # ── Compiled C artifacts ────────────────────────────────────────────────────
 src/kernel.so
 src/kernel.dll
