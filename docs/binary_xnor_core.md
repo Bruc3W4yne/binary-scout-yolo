@@ -1,8 +1,9 @@
 # Binary XNOR Core
 
 This document covers the older `binary-xnor-live` feature/MLP ablation. The
-PowerPoint-aligned final route is `xnor-heatmap-live`, where native
-XNOR-popcount accelerates the learned heatmap scout's binary convolution body.
+PowerPoint-aligned final routes are `xnor-heatmap-live` and
+`xnor-heatmap-320-live`, where native XNOR-popcount accelerates the learned
+heatmap scout's binary convolution body.
 Neither route is a full detector replacement.
 
 ## What It Does

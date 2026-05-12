@@ -120,14 +120,16 @@ python scripts\evaluate_heatmap_scout_recall.py --mode random --random-trials 5 
 python scripts\evaluate_heatmap_scout_recall.py --mode heuristic --top-k-values 8 12
 ```
 
-For the PowerPoint-aligned native binary/XNOR route, run the same STE checkpoint through `xnor-heatmap-live`. This keeps tile selection on the CPU native XNOR path while YOLO detection remains on the GPU:
+For the PowerPoint-aligned native binary/XNOR route, run the same STE checkpoint through `xnor-heatmap-live`. For the performance-aligned route, use `xnor-heatmap-320-live`: it keeps tile selection on the CPU native XNOR path at a cheaper scout resolution while YOLO detection remains on the GPU:
 
 ```powershell
 mingw32-make clean
 mingw32-make
 python scripts\verify_xnor_heatmap_scout.py
 python scripts\evaluate_heatmap_scout_recall.py --mode xnor-heatmap-live --checkpoint runs\heatmap_scout\heatmap_ste.pt --top-k-values 3 5 8 12 --device cuda
+python scripts\evaluate_heatmap_scout_recall.py --mode xnor-heatmap-320-live --checkpoint runs\heatmap_scout\heatmap_ste.pt --top-k-values 8 12 20 36 40 --device cuda
 python scripts\run_yolo_tiles.py --selector xnor-heatmap-live --crop-source original --top-k 8 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\heatmap_scout\heatmap_ste.pt
+python scripts\run_yolo_tiles.py --selector xnor-heatmap-320-live --crop-source original --top-k 36 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\heatmap_scout\heatmap_ste.pt
 ```
 
 Run the learned scout in the timed YOLO crop router:
