@@ -25,6 +25,7 @@ from heatmap_scout import (  # noqa: E402
     load_checkpoint,
     load_live_checkpoint,
     live_heatmap_scores,
+    oracle_rank_tile_targets,
     rgb_to_msb_planes,
     save_checkpoint,
     select_topk_tile_ids,
@@ -63,6 +64,12 @@ def verify_tile_targets() -> None:
     expect(targets[0] == 1.0, "tile containing object center should be positive")
     expect(targets[1] == 1.0, "tile covering >=60% of a box should be positive")
 
+    far_box = Box(600, 600, 620, 620, class_id=0, category_id=1)
+    rank_targets, rank_weights = oracle_rank_tile_targets(tiles, [center_box, far_box], max_rank=18)
+    expect(rank_targets[0] == 1.0 and rank_targets[48] == 1.0, "oracle-rank targets should mark useful greedy tiles")
+    expect(float(rank_targets.sum()) == 2.0, "oracle-rank targets should not mark filler tiles positive")
+    expect(rank_weights[0] == 3.0 and rank_weights[48] == 3.0, "early oracle-rank positives should be weighted")
+
 
 def verify_model_shape_and_backprop() -> None:
     for variant in ("float", "ste"):
@@ -81,6 +88,7 @@ def verify_model_shape_and_backprop() -> None:
             make_tiles(64, 16, 8),
             torch.tensor([10.0]),
             image_size=64,
+            tile_sample_weight=torch.ones_like(tile_targets),
         )
         loss.backward()
         expect(float(loss.item()) > 0.0 and "tile_bce" in parts, f"{variant} loss/backprop failed")

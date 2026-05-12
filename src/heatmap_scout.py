@@ -12,6 +12,7 @@ import torch
 from PIL import Image
 
 from preprocess import Box, Tile, make_tiles, parse_visdrone_annotations, scale_boxes_to_resized
+from routing import oracle_greedy_order_indices
 
 IMAGE_SIZE = 640
 HEATMAP_SIZE = 80
@@ -178,6 +179,50 @@ def tile_targets_from_boxes(tiles: list[Tile], boxes: list[Box], cover_threshold
     return targets
 
 
+def oracle_rank_tile_targets(
+    tiles: list[Tile],
+    boxes: list[Box],
+    max_rank: int = 18,
+) -> tuple[np.ndarray, np.ndarray]:
+    if max_rank < 1:
+        raise ValueError("max_rank must be positive")
+
+    targets = np.zeros(len(tiles), dtype=np.float32)
+    weights = np.ones(len(tiles), dtype=np.float32)
+    if not tiles or not boxes:
+        return targets, weights
+
+    tile_ids = np.asarray([tile.tile_id for tile in tiles], dtype=np.int32)
+    box_lookup = {
+        idx: [box_idx for box_idx, box in enumerate(boxes) if tile.contains_center(box)]
+        for idx, tile in enumerate(tiles)
+    }
+    counts = np.asarray([len(box_lookup[idx]) for idx in range(len(tiles))], dtype=np.float32)
+    selected = oracle_greedy_order_indices(
+        range(len(tiles)),
+        min(max_rank, len(tiles)),
+        tile_ids,
+        box_lookup,
+        counts,
+    )
+
+    covered: set[int] = set()
+    for rank, idx in enumerate(selected, start=1):
+        new_boxes = set(box_lookup.get(idx, [])) - covered
+        if not new_boxes:
+            continue
+        targets[idx] = 1.0
+        if rank <= 6:
+            weights[idx] = 3.0
+        elif rank <= 12:
+            weights[idx] = 2.0
+        else:
+            weights[idx] = 1.0
+        covered.update(new_boxes)
+
+    return targets, weights
+
+
 def tile_slices(
     tiles: list[Tile],
     image_size: int = IMAGE_SIZE,
@@ -236,16 +281,30 @@ def heatmap_scout_loss(
     tiles: list[Tile],
     pos_weight: torch.Tensor,
     image_size: int = IMAGE_SIZE,
+    tile_sample_weight: torch.Tensor | None = None,
+    dense_weight: float = 1.0,
+    dice_weight: float = 0.2,
+    tile_loss_weight: float = 0.5,
 ) -> tuple[torch.Tensor, dict[str, float]]:
-    dense = torch.nn.functional.binary_cross_entropy_with_logits(
-        logits,
-        heatmap_target,
-        pos_weight=pos_weight.to(logits.device),
+    zero = logits.sum() * 0.0
+    dense = (
+        torch.nn.functional.binary_cross_entropy_with_logits(
+            logits,
+            heatmap_target,
+            pos_weight=pos_weight.to(logits.device),
+        )
+        if dense_weight
+        else zero
     )
-    dice = soft_dice_loss(logits, heatmap_target)
+    dice = soft_dice_loss(logits, heatmap_target) if dice_weight else zero
     tile_logits = tile_logits_from_heatmap(logits, tiles, image_size=image_size)
-    tile = torch.nn.functional.binary_cross_entropy_with_logits(tile_logits, tile_target)
-    total = dense + 0.2 * dice + 0.5 * tile
+    tile_loss = torch.nn.functional.binary_cross_entropy_with_logits(tile_logits, tile_target, reduction="none")
+    if tile_sample_weight is not None:
+        weight = tile_sample_weight.to(tile_loss.device, dtype=tile_loss.dtype)
+        tile = (tile_loss * weight).sum() / weight.sum().clamp_min(1.0)
+    else:
+        tile = tile_loss.mean()
+    total = dense_weight * dense + dice_weight * dice + tile_loss_weight * tile
     return total, {"dense_bce": float(dense.item()), "dice": float(dice.item()), "tile_bce": float(tile.item())}
 
 

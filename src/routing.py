@@ -106,6 +106,19 @@ def select_oracle_greedy_indices(
     box_lookup: dict[int, list[int]],
     count_scores: np.ndarray | None = None,
 ) -> list[int]:
+    return sorted(
+        oracle_greedy_order_indices(indices, top_k, tile_ids, box_lookup, count_scores),
+        key=lambda idx: int(tile_ids[idx]),
+    )
+
+
+def oracle_greedy_order_indices(
+    indices: Iterable[int],
+    top_k: int,
+    tile_ids: np.ndarray,
+    box_lookup: dict[int, list[int]],
+    count_scores: np.ndarray | None = None,
+) -> list[int]:
     if top_k < 1:
         raise ValueError("top_k must be positive")
 
@@ -125,7 +138,7 @@ def select_oracle_greedy_indices(
         covered.update(box_lookup.get(best, []))
         remaining.remove(best)
 
-    return sorted(selected, key=lambda idx: int(tile_ids[idx]))
+    return selected
 
 
 def record_box_indices(record: dict) -> list[int]:

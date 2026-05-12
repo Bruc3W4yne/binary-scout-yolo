@@ -26,6 +26,7 @@ from heatmap_scout import (  # noqa: E402
     heatmap_target_from_boxes,
     load_checkpoint,
     load_scaled_boxes,
+    oracle_rank_tile_targets,
     rgb_to_msb_planes,
     save_checkpoint,
     tile_targets_from_boxes,
@@ -40,10 +41,14 @@ class VisDroneHeatmapDataset(Dataset):
         max_images: int = 0,
         input_size: int = IMAGE_SIZE,
         coord_size: int = IMAGE_SIZE,
+        target_mode: str = "objectness",
+        oracle_max_rank: int = 18,
     ):
         self.root = root
         self.input_size = int(input_size)
         self.coord_size = int(coord_size)
+        self.target_mode = str(target_mode)
+        self.oracle_max_rank = int(oracle_max_rank)
         self.heatmap_size = self.input_size // 8
         self.image_dir = root / "images"
         self.annotation_dir = root / "annotations"
@@ -68,7 +73,16 @@ class VisDroneHeatmapDataset(Dataset):
                 dtype=np.uint8,
             )
         boxes = load_scaled_boxes(ann_path, orig_size, image_size=self.coord_size)
-        return sample_tensors(rgb, boxes, self.tiles, stem, self.coord_size, self.heatmap_size)
+        return sample_tensors(
+            rgb,
+            boxes,
+            self.tiles,
+            stem,
+            self.coord_size,
+            self.heatmap_size,
+            self.target_mode,
+            self.oracle_max_rank,
+        )
 
 
 class SyntheticHeatmapDataset(Dataset):
@@ -78,11 +92,15 @@ class SyntheticHeatmapDataset(Dataset):
         seed: int = 42,
         input_size: int = IMAGE_SIZE,
         coord_size: int = IMAGE_SIZE,
+        target_mode: str = "objectness",
+        oracle_max_rank: int = 18,
     ):
         self.images = int(images)
         self.seed = int(seed)
         self.input_size = int(input_size)
         self.coord_size = int(coord_size)
+        self.target_mode = str(target_mode)
+        self.oracle_max_rank = int(oracle_max_rank)
         self.heatmap_size = self.input_size // 8
         self.tiles = make_tiles(img_size=self.coord_size)
 
@@ -112,6 +130,8 @@ class SyntheticHeatmapDataset(Dataset):
             f"synthetic_{idx:05d}",
             self.coord_size,
             self.heatmap_size,
+            self.target_mode,
+            self.oracle_max_rank,
         )
 
 
@@ -122,7 +142,17 @@ def sample_tensors(
     stem: str,
     coord_size: int = IMAGE_SIZE,
     heatmap_size: int = HEATMAP_SIZE,
+    target_mode: str = "objectness",
+    oracle_max_rank: int = 18,
 ) -> dict:
+    if target_mode == "objectness":
+        tile_targets = tile_targets_from_boxes(tiles, boxes)
+        tile_weights = np.ones(len(tiles), dtype=np.float32)
+    elif target_mode == "oracle-rank":
+        tile_targets, tile_weights = oracle_rank_tile_targets(tiles, boxes, max_rank=oracle_max_rank)
+    else:
+        raise ValueError(f"unsupported target_mode: {target_mode}")
+
     return {
         "stem": stem,
         "planes": torch.from_numpy(rgb_to_msb_planes(rgb)),
@@ -133,8 +163,13 @@ def sample_tensors(
                 heatmap_size=heatmap_size,
             )
         ),
-        "tile_targets": torch.from_numpy(tile_targets_from_boxes(tiles, boxes)),
+        "tile_targets": torch.from_numpy(tile_targets),
+        "tile_weights": torch.from_numpy(tile_weights),
     }
+
+
+def loss_weights(target_mode: str) -> tuple[float, float, float]:
+    return (0.0, 0.0, 1.0) if target_mode == "oracle-rank" else (1.0, 0.2, 0.5)
 
 
 def choose_device(device: str) -> torch.device:
@@ -162,14 +197,17 @@ def evaluate(
     tiles,
     pos_weight: torch.Tensor,
     coord_size: int,
+    target_mode: str,
 ) -> dict:
     model.eval()
     total_loss = dense = dice = tile = 0.0
     batches = 0
+    dense_w, dice_w, tile_w = loss_weights(target_mode)
     for batch in loader:
         planes = batch["planes"].to(device)
         heatmap = batch["heatmap"].to(device)
         tile_targets = batch["tile_targets"].to(device)
+        tile_weights = batch["tile_weights"].to(device)
         logits = model(planes)
         loss, parts = heatmap_scout_loss(
             logits,
@@ -178,6 +216,10 @@ def evaluate(
             tiles,
             pos_weight,
             image_size=coord_size,
+            tile_sample_weight=tile_weights,
+            dense_weight=dense_w,
+            dice_weight=dice_w,
+            tile_loss_weight=tile_w,
         )
         total_loss += float(loss.item())
         dense += parts["dense_bce"]
@@ -220,6 +262,8 @@ def parse_args() -> argparse.Namespace:
         help="use synthetic data instead of VisDrone",
     )
     parser.add_argument("--pos-weight-samples", type=int, default=256)
+    parser.add_argument("--target-mode", choices=["objectness", "oracle-rank"], default="objectness")
+    parser.add_argument("--oracle-max-rank", type=int, default=18)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     return parser.parse_args()
@@ -240,6 +284,8 @@ def main() -> int:
             raise ValueError("--workers must be nonnegative")
         if args.input_size < 64 or args.input_size % 8:
             raise ValueError("--input-size must be >=64 and divisible by 8")
+        if args.oracle_max_rank < 1:
+            raise ValueError("--oracle-max-rank must be positive")
 
         device = choose_device(args.device)
         coord_size = IMAGE_SIZE
@@ -249,12 +295,16 @@ def main() -> int:
                 seed=args.seed,
                 input_size=args.input_size,
                 coord_size=coord_size,
+                target_mode=args.target_mode,
+                oracle_max_rank=args.oracle_max_rank,
             )
             val_ds = SyntheticHeatmapDataset(
                 max(1, min(args.synthetic_images, 8)),
                 seed=args.seed + 10000,
                 input_size=args.input_size,
                 coord_size=coord_size,
+                target_mode=args.target_mode,
+                oracle_max_rank=args.oracle_max_rank,
             )
             dataset_name = "synthetic"
         else:
@@ -263,12 +313,16 @@ def main() -> int:
                 max_images=args.max_train_images,
                 input_size=args.input_size,
                 coord_size=coord_size,
+                target_mode=args.target_mode,
+                oracle_max_rank=args.oracle_max_rank,
             )
             val_ds = VisDroneHeatmapDataset(
                 args.val_root,
                 max_images=args.max_val_images,
                 input_size=args.input_size,
                 coord_size=coord_size,
+                target_mode=args.target_mode,
+                oracle_max_rank=args.oracle_max_rank,
             )
             dataset_name = "visdrone"
 
@@ -304,6 +358,7 @@ def main() -> int:
         pos_weight = torch.tensor([pos_weight_value], device=device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
         log = []
+        dense_w, dice_w, tile_w = loss_weights(args.target_mode)
 
         for epoch in range(1, args.epochs + 1):
             model.train()
@@ -313,6 +368,7 @@ def main() -> int:
                 planes = batch["planes"].to(device)
                 heatmap = batch["heatmap"].to(device)
                 tile_targets = batch["tile_targets"].to(device)
+                tile_weights = batch["tile_weights"].to(device)
                 optimizer.zero_grad(set_to_none=True)
                 logits = model(planes)
                 loss, parts = heatmap_scout_loss(
@@ -322,6 +378,10 @@ def main() -> int:
                     tiles,
                     pos_weight,
                     image_size=coord_size,
+                    tile_sample_weight=tile_weights,
+                    dense_weight=dense_w,
+                    dice_weight=dice_w,
+                    tile_loss_weight=tile_w,
                 )
                 loss.backward()
                 optimizer.step()
@@ -331,7 +391,7 @@ def main() -> int:
                     running[key] += value * batch_n
                 samples += batch_n
 
-            val = evaluate(model, val_loader, device, tiles, pos_weight, coord_size)
+            val = evaluate(model, val_loader, device, tiles, pos_weight, coord_size, args.target_mode)
             row = {
                 "epoch": epoch,
                 "train": {key: value / max(samples, 1) for key, value in running.items()},
@@ -355,6 +415,9 @@ def main() -> int:
             "coord_size": coord_size,
             "heatmap_size": args.input_size // 8,
             "pos_weight": pos_weight_value,
+            "target_mode": args.target_mode,
+            "oracle_max_rank": args.oracle_max_rank if args.target_mode == "oracle-rank" else None,
+            "loss_weights": {"dense_bce": dense_w, "dice": dice_w, "tile_bce": tile_w},
             "train_log": log,
         }
         save_checkpoint(model, args.out, metadata, ROOT)
@@ -370,7 +433,7 @@ def main() -> int:
     print(f"PASS  log={log_path}")
     print(
         f"PASS  variant={args.variant} dataset={dataset_name} "
-        f"input_size={args.input_size} pos_weight={pos_weight_value:.2f}"
+        f"input_size={args.input_size} target_mode={args.target_mode} pos_weight={pos_weight_value:.2f}"
     )
     return 0
 
