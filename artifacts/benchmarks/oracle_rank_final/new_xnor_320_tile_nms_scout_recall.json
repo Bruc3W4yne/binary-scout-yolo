@@ -1,0 +1,127 @@
+{
+  "mode": "xnor-heatmap-320-live",
+  "route": "xnor-heatmap-320-live",
+  "tile_jsonl": "C:\\Users\\Bruc3W4yne\\binary-scout-yolo-final\\data\\tile_dataset\\val_tiles.jsonl",
+  "prior_tile_jsonl": null,
+  "checkpoint": "runs\\heatmap_scout\\heatmap_ste_320_oracle_rank_e10.pt",
+  "device": "cuda",
+  "seed": 42,
+  "random_trials": 1,
+  "max_images": 0,
+  "selection_policy": "tile-nms",
+  "min_k": 1,
+  "max_k": 0,
+  "tile_nms_iou": 0.3,
+  "mmr_lambda": 0.75,
+  "score_threshold": null,
+  "mass_threshold": null,
+  "top_k": {
+    "12": {
+      "images": 548,
+      "tile_total": 26852,
+      "selected_tile_total": 6576,
+      "object_total": 38759,
+      "covered_objects": 32303,
+      "positive_tile_total": 17503,
+      "selected_positive_tiles": 5220,
+      "mean_selected_tiles": 12.0,
+      "selected_area_fraction": 0.5967153284671532,
+      "object_recall": 0.8334322350937847,
+      "positive_tile_recall": 0.2982345883562818
+    },
+    "16": {
+      "images": 548,
+      "tile_total": 26852,
+      "selected_tile_total": 8768,
+      "object_total": 38759,
+      "covered_objects": 35726,
+      "positive_tile_total": 17503,
+      "selected_positive_tiles": 6494,
+      "mean_selected_tiles": 16.0,
+      "selected_area_fraction": 0.7551608120437956,
+      "object_recall": 0.9217472071002863,
+      "positive_tile_recall": 0.37102211049534367
+    },
+    "18": {
+      "images": 548,
+      "tile_total": 26852,
+      "selected_tile_total": 9864,
+      "object_total": 38759,
+      "covered_objects": 36685,
+      "positive_tile_total": 17503,
+      "selected_positive_tiles": 6997,
+      "mean_selected_tiles": 18.0,
+      "selected_area_fraction": 0.830348996350365,
+      "object_recall": 0.9464898475192859,
+      "positive_tile_recall": 0.39976004113580527
+    },
+    "20": {
+      "images": 548,
+      "tile_total": 26852,
+      "selected_tile_total": 10960,
+      "object_total": 38759,
+      "covered_objects": 37192,
+      "positive_tile_total": 17503,
+      "selected_positive_tiles": 7465,
+      "mean_selected_tiles": 20.0,
+      "selected_area_fraction": 0.8897696167883211,
+      "object_recall": 0.9595706803581103,
+      "positive_tile_recall": 0.4264983145746443
+    },
+    "24": {
+      "images": 548,
+      "tile_total": 26852,
+      "selected_tile_total": 13152,
+      "object_total": 38759,
+      "covered_objects": 37541,
+      "positive_tile_total": 17503,
+      "selected_positive_tiles": 9021,
+      "mean_selected_tiles": 24.0,
+      "selected_area_fraction": 0.9311416514598541,
+      "object_recall": 0.9685750406357233,
+      "positive_tile_recall": 0.5153973604524938
+    }
+  },
+  "timing_ms": {
+    "scout_heatmap_head_ms": {
+      "mean": 0.03603795630624518,
+      "p50": 0.034900003811344504,
+      "p95": 0.046430004294961684
+    },
+    "scout_heatmap_postprocess_ms": {
+      "mean": 5.348114597710549,
+      "p50": 5.320900017977692,
+      "p95": 5.650519981281832
+    },
+    "scout_heatmap_preprocess_ms": {
+      "mean": 0.6273629566689403,
+      "p50": 0.6112500122981146,
+      "p95": 0.7015300070634111
+    },
+    "scout_heatmap_resize_ms": {
+      "mean": 1.4653368607668178,
+      "p50": 1.449399976991117,
+      "p95": 1.5135150097194128
+    },
+    "scout_heatmap_tile_score_ms": {
+      "mean": 0.9290270070140896,
+      "p50": 0.8038000087253749,
+      "p95": 0.945365009829402
+    },
+    "scout_pack_ms": {
+      "mean": 0.17673284729711547,
+      "p50": 0.17390002903994173,
+      "p95": 0.2380949808866717
+    },
+    "scout_total_ms": {
+      "mean": 18.79510565655158,
+      "p50": 18.64685001783073,
+      "p95": 19.64179999777116
+    },
+    "scout_xnor_kernel_ms": {
+      "mean": 10.212493430787823,
+      "p50": 10.180399985983968,
+      "p95": 10.869215021375567
+    }
+  }
+}

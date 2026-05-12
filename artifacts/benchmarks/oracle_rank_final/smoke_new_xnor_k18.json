@@ -1,0 +1,611 @@
+{
+  "config": {
+    "weights": "yolov8n.pt",
+    "split": "val",
+    "selector": "xnor-heatmap-320-live",
+    "selection_policy": "tile-nms",
+    "min_k": 1,
+    "max_k": 18,
+    "tile_nms_iou": 0.3,
+    "mmr_lambda": 0.75,
+    "score_threshold": null,
+    "mass_threshold": null,
+    "crop_source": "original",
+    "top_k": 18,
+    "max_images": 2,
+    "conf": 0.25,
+    "yolo_iou": 0.7,
+    "merge_iou": 0.5,
+    "match_iou": 0.5,
+    "small_area": 1024.0,
+    "medium_area": 9216.0,
+    "device": "0",
+    "device_name": "NVIDIA GeForce RTX 4090",
+    "git_commit": "7850117",
+    "prior_split": null,
+    "warmup_images": 1,
+    "features": null,
+    "checkpoint": "runs\\heatmap_scout\\heatmap_ste_320_oracle_rank_e10.pt",
+    "scout_route": "xnor-heatmap-320-live",
+    "command": "python scripts\\run_yolo_tiles.py --selector xnor-heatmap-320-live --selection-policy tile-nms --crop-source original --top-k 18 --split val --max-images 2 --device cuda --weights yolov8n.pt --checkpoint runs\\heatmap_scout\\heatmap_ste_320_oracle_rank_e10.pt --out artifacts\\benchmarks\\oracle_rank_final\\smoke_new_xnor_k18.json"
+  },
+  "summary": {
+    "selector": "xnor-heatmap-320-live",
+    "crop_source": "original",
+    "top_k": 18,
+    "images": 2,
+    "gt_boxes": 204,
+    "matched_gt": 43,
+    "detections": 65,
+    "matched_detections": 43,
+    "false_positives": 22,
+    "class_agnostic_precision": 0.6615384615384615,
+    "class_agnostic_f1": 0.3197026022304833,
+    "class_agnostic_recall": 0.2107843137254902,
+    "small_gt_boxes": 190,
+    "small_matched_gt": 36,
+    "small_object_recall": 0.18947368421052632,
+    "medium_gt_boxes": 14,
+    "medium_matched_gt": 7,
+    "medium_object_recall": 0.5,
+    "large_gt_boxes": 0,
+    "large_matched_gt": 0,
+    "large_object_recall": 0.0,
+    "mean_detections": 32.5,
+    "mean_detector_calls": 18.0,
+    "mean_selected_tiles": 18.0,
+    "p50_selected_tiles": 18.0,
+    "p95_selected_tiles": 18.0,
+    "mean_selected_area_fraction": 0.8515625,
+    "mean_gt_object_coverage": 0.987012987012987,
+    "mean_duplicate_coverage_count": 49.0,
+    "latency_ms": {
+      "mean": 62.56614997982979,
+      "p50": 62.56614997982979,
+      "p95": 65.01824500155635,
+      "min": 59.84159995568916,
+      "max": 65.29070000397041
+    },
+    "phase_ms": {
+      "image_load_ms": {
+        "mean": 8.71254998492077,
+        "p50": 8.71254998492077,
+        "p95": 10.057914987555705,
+        "min": 7.217699981993064,
+        "max": 10.207399987848476
+      },
+      "resize_preprocess_ms": {
+        "mean": 9.913250003592111,
+        "p50": 9.913250003592111,
+        "p95": 10.0021250123973,
+        "min": 9.814499993808568,
+        "max": 10.012000013375655
+      },
+      "gt_parse_ms": {
+        "mean": 0.5177499988349155,
+        "p50": 0.5177499988349155,
+        "p95": 0.5745849994127639,
+        "min": 0.4545999981928617,
+        "max": 0.5808999994769692
+      },
+      "scout_ms": {
+        "mean": 18.75215000472963,
+        "p50": 18.75215000472963,
+        "p95": 19.125604993314482,
+        "min": 18.337200017413124,
+        "max": 19.167099992046133
+      },
+      "scout_resize_ms": {
+        "mean": 9.913250003592111,
+        "p50": 9.913250003592111,
+        "p95": 10.0021250123973,
+        "min": 9.814499993808568,
+        "max": 10.012000013375655
+      },
+      "scout_bitplane_stats_ms": {
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "scout_bitplanes_ms": {
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "scout_pack_ms": {
+        "mean": 0.202000024728477,
+        "p50": 0.202000024728477,
+        "p95": 0.20290000538807362,
+        "min": 0.2010000462178141,
+        "max": 0.20300000323913991
+      },
+      "scout_xnor_kernel_ms": {
+        "mean": 9.700549984700046,
+        "p50": 9.700549984700046,
+        "p95": 10.04214500571834,
+        "min": 9.320999961346388,
+        "max": 10.080100008053705
+      },
+      "scout_threshold_ms": {
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "scout_tile_summary_ms": {
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "scout_spatial_ms": {
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "scout_heatmap_resize_ms": {
+        "mean": 1.4488999877357855,
+        "p50": 1.4488999877357855,
+        "p95": 1.4545699916197918,
+        "min": 1.442599983420223,
+        "max": 1.455199992051348
+      },
+      "scout_heatmap_preprocess_ms": {
+        "mean": 0.7653500069864094,
+        "p50": 0.7653500069864094,
+        "p95": 0.8921150030801073,
+        "min": 0.6245000113267452,
+        "max": 0.9062000026460737
+      },
+      "scout_heatmap_model_ms": {
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "scout_heatmap_postprocess_ms": {
+        "mean": 5.522250008652918,
+        "p50": 5.522250008652918,
+        "p95": 5.583045013190713,
+        "min": 5.454700003610924,
+        "max": 5.589800013694912
+      },
+      "scout_heatmap_head_ms": {
+        "mean": 0.05329999839887023,
+        "p50": 0.05329999839887023,
+        "p95": 0.05771000578533858,
+        "min": 0.04839999019168317,
+        "max": 0.058200006606057286
+      },
+      "scout_heatmap_tile_score_ms": {
+        "mean": 0.8444999984931201,
+        "p50": 0.8444999984931201,
+        "p95": 0.8573699917178601,
+        "min": 0.8302000060211867,
+        "max": 0.8587999909650534
+      },
+      "scout_mlp_ms": {
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "scout_topk_ms": {
+        "mean": 0.21529999503400177,
+        "p50": 0.21529999503400177,
+        "p95": 0.22735999518772587,
+        "min": 0.2018999948631972,
+        "max": 0.22869999520480633
+      },
+      "scout_total_ms": {
+        "mean": 18.75215000472963,
+        "p50": 18.75215000472963,
+        "p95": 19.125604993314482,
+        "min": 18.337200017413124,
+        "max": 19.167099992046133
+      },
+      "scout_total_with_resize_ms": {
+        "mean": 28.66540000832174,
+        "p50": 28.66540000832174,
+        "p95": 28.949979988101404,
+        "min": 28.34920003078878,
+        "max": 28.9815999858547
+      },
+      "yolo_ms": {
+        "mean": 23.790849998476915,
+        "p50": 23.790849998476915,
+        "p95": 25.220815003558528,
+        "min": 22.20199999283068,
+        "max": 25.37970000412315
+      },
+      "merge_nms_ms": {
+        "mean": 1.3973499881103635,
+        "p50": 1.3973499881103635,
+        "p95": 1.4360049943206832,
+        "min": 1.3543999812100083,
+        "max": 1.4402999950107187
+      },
+      "match_eval_ms": {
+        "mean": 1.3173999905120581,
+        "p50": 1.3173999905120581,
+        "p95": 1.6899999987799674,
+        "min": 0.9033999813254923,
+        "max": 1.731399999698624
+      },
+      "pipeline_ms_excl_gt": {
+        "mean": 62.56614997982979,
+        "p50": 62.56614997982979,
+        "p95": 65.01824500155635,
+        "min": 59.84159995568916,
+        "max": 65.29070000397041
+      },
+      "wall_ms": {
+        "mean": 65.32249999872874,
+        "p50": 65.32249999872874,
+        "p95": 68.20015999983298,
+        "min": 62.12509999750182,
+        "max": 68.51989999995567
+      }
+    }
+  },
+  "images": [
+    {
+      "image_id": "0000001_02999_d_0000005",
+      "stem": "0000001_02999_d_0000005",
+      "selector": "xnor-heatmap-320-live",
+      "scout_route": "xnor-heatmap-320-live",
+      "seed": 42,
+      "crop_source": "original",
+      "top_k": 18,
+      "selection_policy": "tile-nms",
+      "min_k": 1,
+      "max_k": 18,
+      "selected_tiles": 18,
+      "selected_tile_ids": [
+        0,
+        2,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        20,
+        22,
+        26,
+        28,
+        31,
+        34,
+        37,
+        39,
+        42,
+        48
+      ],
+      "selected_tile_scores": [
+        {
+          "tile_id": 0,
+          "score": -0.6804043054580688
+        },
+        {
+          "tile_id": 2,
+          "score": -0.24150891602039337
+        },
+        {
+          "tile_id": 6,
+          "score": -0.05193256214261055
+        },
+        {
+          "tile_id": 8,
+          "score": -0.45245781540870667
+        },
+        {
+          "tile_id": 10,
+          "score": 0.2554749548435211
+        },
+        {
+          "tile_id": 12,
+          "score": -0.1900702267885208
+        },
+        {
+          "tile_id": 14,
+          "score": -0.6962710618972778
+        },
+        {
+          "tile_id": 16,
+          "score": 0.3495441675186157
+        },
+        {
+          "tile_id": 20,
+          "score": -0.0014975785743445158
+        },
+        {
+          "tile_id": 22,
+          "score": -0.04114628583192825
+        },
+        {
+          "tile_id": 26,
+          "score": -0.6453744769096375
+        },
+        {
+          "tile_id": 28,
+          "score": 0.030560124665498734
+        },
+        {
+          "tile_id": 31,
+          "score": -0.08590573072433472
+        },
+        {
+          "tile_id": 34,
+          "score": -0.6103703379631042
+        },
+        {
+          "tile_id": 37,
+          "score": -1.0191106796264648
+        },
+        {
+          "tile_id": 39,
+          "score": -0.4295196533203125
+        },
+        {
+          "tile_id": 42,
+          "score": -0.20007605850696564
+        },
+        {
+          "tile_id": 48,
+          "score": 0.07585208117961884
+        }
+      ],
+      "selected_area_fraction": 0.890625,
+      "detector_calls": 18,
+      "detections": 34,
+      "latency_ms": 65.29070000397041,
+      "image_load_ms": 10.207399987848476,
+      "resize_preprocess_ms": 10.012000013375655,
+      "gt_parse_ms": 0.5808999994769692,
+      "scout_ms": 18.337200017413124,
+      "yolo_ms": 25.37970000412315,
+      "merge_nms_ms": 1.3543999812100083,
+      "match_eval_ms": 1.731399999698624,
+      "pipeline_ms_excl_gt": 65.29070000397041,
+      "wall_ms": 68.51989999995567,
+      "load_ms": 20.8003000007011,
+      "merge_ms": 1.3543999812100083,
+      "gt_boxes": 127,
+      "matched_gt": 23,
+      "matched_detections": 23,
+      "false_positives": 11,
+      "precision": 0.6764705882352942,
+      "f1": 0.28571428571428575,
+      "recall": 0.18110236220472442,
+      "small_gt_boxes": 123,
+      "small_matched_gt": 20,
+      "small_object_recall": 0.16260162601626016,
+      "medium_gt_boxes": 4,
+      "medium_matched_gt": 3,
+      "medium_object_recall": 0.75,
+      "large_gt_boxes": 0,
+      "large_matched_gt": 0,
+      "large_object_recall": 0.0,
+      "selected_pair_count": 153,
+      "selected_iou_mean": 0.014005602240896357,
+      "selected_iou_max": 0.14285714285714285,
+      "selected_iou_over_0_1": 15,
+      "selected_iou_over_0_3": 0,
+      "gt_object_coverage": 1.0,
+      "gt_objects_covered": 127,
+      "gt_objects_total": 127,
+      "positive_tile_recall": 0.35714285714285715,
+      "positive_tiles_selected": 10,
+      "positive_tiles_total": 28,
+      "duplicate_coverage_count": 51,
+      "scout_heatmap_resize_ms": 1.455199992051348,
+      "scout_heatmap_preprocess_ms": 0.6245000113267452,
+      "scout_pack_ms": 0.2010000462178141,
+      "scout_xnor_kernel_ms": 9.320999961346388,
+      "scout_heatmap_postprocess_ms": 5.589800013694912,
+      "scout_heatmap_head_ms": 0.058200006606057286,
+      "scout_heatmap_tile_score_ms": 0.8587999909650534,
+      "scout_resize_ms": 10.012000013375655,
+      "scout_topk_ms": 0.22869999520480633,
+      "scout_total_ms": 18.337200017413124,
+      "scout_total_with_resize_ms": 28.34920003078878,
+      "scout_timing_ms": {
+        "heatmap_resize_ms": 1.455199992051348,
+        "heatmap_preprocess_ms": 0.6245000113267452,
+        "pack_ms": 0.2010000462178141,
+        "xnor_kernel_ms": 9.320999961346388,
+        "heatmap_postprocess_ms": 5.589800013694912,
+        "heatmap_head_ms": 0.058200006606057286,
+        "heatmap_tile_score_ms": 0.8587999909650534,
+        "resize_ms": 10.012000013375655,
+        "topk_ms": 0.22869999520480633,
+        "total_ms": 18.337200017413124,
+        "total_with_resize_ms": 28.34920003078878
+      }
+    },
+    {
+      "image_id": "0000001_03499_d_0000006",
+      "stem": "0000001_03499_d_0000006",
+      "selector": "xnor-heatmap-320-live",
+      "scout_route": "xnor-heatmap-320-live",
+      "seed": 42,
+      "crop_source": "original",
+      "top_k": 18,
+      "selection_policy": "tile-nms",
+      "min_k": 1,
+      "max_k": 18,
+      "selected_tiles": 18,
+      "selected_tile_ids": [
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18,
+        22,
+        24,
+        27,
+        30,
+        32,
+        38,
+        40,
+        42,
+        44,
+        48
+      ],
+      "selected_tile_scores": [
+        {
+          "tile_id": 4,
+          "score": -0.5529604554176331
+        },
+        {
+          "tile_id": 6,
+          "score": -0.024321895092725754
+        },
+        {
+          "tile_id": 8,
+          "score": -1.1810270547866821
+        },
+        {
+          "tile_id": 10,
+          "score": -0.26715797185897827
+        },
+        {
+          "tile_id": 12,
+          "score": -0.4807298183441162
+        },
+        {
+          "tile_id": 14,
+          "score": -1.0767160654067993
+        },
+        {
+          "tile_id": 16,
+          "score": 0.391782283782959
+        },
+        {
+          "tile_id": 18,
+          "score": -0.5738022923469543
+        },
+        {
+          "tile_id": 22,
+          "score": -0.47539669275283813
+        },
+        {
+          "tile_id": 24,
+          "score": 0.33461353182792664
+        },
+        {
+          "tile_id": 27,
+          "score": -0.4288736879825592
+        },
+        {
+          "tile_id": 30,
+          "score": -0.47269368171691895
+        },
+        {
+          "tile_id": 32,
+          "score": 0.037697684019804
+        },
+        {
+          "tile_id": 38,
+          "score": -0.3957693874835968
+        },
+        {
+          "tile_id": 40,
+          "score": -0.7355959415435791
+        },
+        {
+          "tile_id": 42,
+          "score": 0.01844887062907219
+        },
+        {
+          "tile_id": 44,
+          "score": 0.2836085855960846
+        },
+        {
+          "tile_id": 48,
+          "score": -0.40659675002098083
+        }
+      ],
+      "selected_area_fraction": 0.8125,
+      "detector_calls": 18,
+      "detections": 31,
+      "latency_ms": 59.84159995568916,
+      "image_load_ms": 7.217699981993064,
+      "resize_preprocess_ms": 9.814499993808568,
+      "gt_parse_ms": 0.4545999981928617,
+      "scout_ms": 19.167099992046133,
+      "yolo_ms": 22.20199999283068,
+      "merge_nms_ms": 1.4402999950107187,
+      "match_eval_ms": 0.9033999813254923,
+      "pipeline_ms_excl_gt": 59.84159995568916,
+      "wall_ms": 62.12509999750182,
+      "load_ms": 17.486799973994493,
+      "merge_ms": 1.4402999950107187,
+      "gt_boxes": 77,
+      "matched_gt": 20,
+      "matched_detections": 20,
+      "false_positives": 11,
+      "precision": 0.6451612903225806,
+      "f1": 0.37037037037037035,
+      "recall": 0.2597402597402597,
+      "small_gt_boxes": 67,
+      "small_matched_gt": 16,
+      "small_object_recall": 0.23880597014925373,
+      "medium_gt_boxes": 10,
+      "medium_matched_gt": 4,
+      "medium_object_recall": 0.4,
+      "large_gt_boxes": 0,
+      "large_matched_gt": 0,
+      "large_object_recall": 0.0,
+      "selected_pair_count": 153,
+      "selected_iou_mean": 0.01867413632119514,
+      "selected_iou_max": 0.14285714285714285,
+      "selected_iou_over_0_1": 20,
+      "selected_iou_over_0_3": 0,
+      "gt_object_coverage": 0.974025974025974,
+      "gt_objects_covered": 75,
+      "gt_objects_total": 77,
+      "positive_tile_recall": 0.43333333333333335,
+      "positive_tiles_selected": 13,
+      "positive_tiles_total": 30,
+      "duplicate_coverage_count": 47,
+      "scout_heatmap_resize_ms": 1.442599983420223,
+      "scout_heatmap_preprocess_ms": 0.9062000026460737,
+      "scout_pack_ms": 0.20300000323913991,
+      "scout_xnor_kernel_ms": 10.080100008053705,
+      "scout_heatmap_postprocess_ms": 5.454700003610924,
+      "scout_heatmap_head_ms": 0.04839999019168317,
+      "scout_heatmap_tile_score_ms": 0.8302000060211867,
+      "scout_resize_ms": 9.814499993808568,
+      "scout_topk_ms": 0.2018999948631972,
+      "scout_total_ms": 19.167099992046133,
+      "scout_total_with_resize_ms": 28.9815999858547,
+      "scout_timing_ms": {
+        "heatmap_resize_ms": 1.442599983420223,
+        "heatmap_preprocess_ms": 0.9062000026460737,
+        "pack_ms": 0.20300000323913991,
+        "xnor_kernel_ms": 10.080100008053705,
+        "heatmap_postprocess_ms": 5.454700003610924,
+        "heatmap_head_ms": 0.04839999019168317,
+        "heatmap_tile_score_ms": 0.8302000060211867,
+        "resize_ms": 9.814499993808568,
+        "topk_ms": 0.2018999948631972,
+        "total_ms": 19.167099992046133,
+        "total_with_resize_ms": 28.9815999858547
+      }
+    }
+  ]
+}
