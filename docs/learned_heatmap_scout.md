@@ -43,8 +43,8 @@ python scripts\train_heatmap_scout.py --synthetic-images 1 --epochs 1 --batch 1 
 Full VisDrone training:
 
 ```powershell
-python scripts\train_heatmap_scout.py --variant float --train-root data\VisDrone2019-DET-train --val-root data\VisDrone2019-DET-val --epochs 20 --batch 8 --device cuda --out runs\heatmap_scout\heatmap_float.pt
-python scripts\train_heatmap_scout.py --variant ste --init runs\heatmap_scout\heatmap_float.pt --train-root data\VisDrone2019-DET-train --val-root data\VisDrone2019-DET-val --epochs 20 --batch 8 --device cuda --out runs\heatmap_scout\heatmap_ste.pt
+python scripts\train_heatmap_scout.py --variant float --train-root data\VisDrone2019-DET-train --val-root data\VisDrone2019-DET-val --epochs 20 --batch 8 --workers 4 --device cuda --out runs\heatmap_scout\heatmap_float.pt
+python scripts\train_heatmap_scout.py --variant ste --init runs\heatmap_scout\heatmap_float.pt --train-root data\VisDrone2019-DET-train --val-root data\VisDrone2019-DET-val --epochs 20 --batch 8 --workers 4 --device cuda --out runs\heatmap_scout\heatmap_ste.pt
 ```
 
 Selector-only recall:

@@ -143,6 +143,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--init", type=Path, default=None)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--max-train-images", type=int, default=0)
     parser.add_argument("--max-val-images", type=int, default=0)
@@ -164,6 +165,8 @@ def main() -> int:
             raise ValueError("--epochs must be positive")
         if args.batch < 1:
             raise ValueError("--batch must be positive")
+        if args.workers < 0:
+            raise ValueError("--workers must be nonnegative")
 
         device = choose_device(args.device)
         if args.synthetic_images:
@@ -175,8 +178,21 @@ def main() -> int:
             val_ds = VisDroneHeatmapDataset(args.val_root, max_images=args.max_val_images)
             dataset_name = "visdrone"
 
-        train_loader = DataLoader(train_ds, batch_size=args.batch, shuffle=True, num_workers=0)
-        val_loader = DataLoader(val_ds, batch_size=args.batch, shuffle=False, num_workers=0)
+        pin_memory = device.type == "cuda"
+        train_loader = DataLoader(
+            train_ds,
+            batch_size=args.batch,
+            shuffle=True,
+            num_workers=args.workers,
+            pin_memory=pin_memory,
+        )
+        val_loader = DataLoader(
+            val_ds,
+            batch_size=args.batch,
+            shuffle=False,
+            num_workers=args.workers,
+            pin_memory=pin_memory,
+        )
         tiles = make_tiles(img_size=IMAGE_SIZE)
 
         model = HeatmapScout(args.variant)
@@ -230,6 +246,7 @@ def main() -> int:
             "val_images": len(val_ds),
             "epochs": args.epochs,
             "batch": args.batch,
+            "workers": args.workers,
             "lr": args.lr,
             "pos_weight": pos_weight_value,
             "train_log": log,

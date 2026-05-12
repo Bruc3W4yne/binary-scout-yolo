@@ -112,8 +112,8 @@ Train and evaluate the learned heatmap scout. The float variant is a sanity uppe
 
 ```powershell
 python scripts\verify_heatmap_scout.py
-python scripts\train_heatmap_scout.py --variant float --train-root data\VisDrone2019-DET-train --val-root data\VisDrone2019-DET-val --epochs 20 --batch 8 --device cuda --out runs\heatmap_scout\heatmap_float.pt
-python scripts\train_heatmap_scout.py --variant ste --init runs\heatmap_scout\heatmap_float.pt --train-root data\VisDrone2019-DET-train --val-root data\VisDrone2019-DET-val --epochs 20 --batch 8 --device cuda --out runs\heatmap_scout\heatmap_ste.pt
+python scripts\train_heatmap_scout.py --variant float --train-root data\VisDrone2019-DET-train --val-root data\VisDrone2019-DET-val --epochs 20 --batch 8 --workers 4 --device cuda --out runs\heatmap_scout\heatmap_float.pt
+python scripts\train_heatmap_scout.py --variant ste --init runs\heatmap_scout\heatmap_float.pt --train-root data\VisDrone2019-DET-train --val-root data\VisDrone2019-DET-val --epochs 20 --batch 8 --workers 4 --device cuda --out runs\heatmap_scout\heatmap_ste.pt
 python scripts\evaluate_heatmap_scout_recall.py --checkpoint runs\heatmap_scout\heatmap_float.pt --mode learned-heatmap --top-k-values 8 12 --device cuda
 python scripts\evaluate_heatmap_scout_recall.py --checkpoint runs\heatmap_scout\heatmap_ste.pt --mode learned-heatmap --top-k-values 8 12 --device cuda --out data\results_heatmap_scout_recall_learned_heatmap_ste.json
 python scripts\evaluate_heatmap_scout_recall.py --mode random --random-trials 5 --top-k-values 8 12
