@@ -199,9 +199,11 @@ def main() -> int:
         if args.init:
             init_model, _ = load_checkpoint(args.init)
             missing, unexpected = model.load_state_dict(init_model.state_dict(), strict=False)
+            ignored = [key for key in unexpected if key.endswith(".conv.bias")]
+            unexpected = [key for key in unexpected if key not in ignored]
             if unexpected:
                 raise ValueError(f"unexpected init keys: {unexpected}")
-            print(f"init={args.init} missing={list(missing)}")
+            print(f"init={args.init} missing={list(missing)} ignored={ignored}")
         model.to(device)
 
         pos_weight_value = estimate_pos_weight(train_ds, args.pos_weight_samples)
