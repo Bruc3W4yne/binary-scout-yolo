@@ -26,33 +26,33 @@ A positive XNOR result required:
 
 ## Result
 
-Exhaustive tiled YOLO reached `0.399` recall and `0.355` small-object recall at `100.2 ms`.
+Exhaustive tiled YOLO reached `0.399` recall and `0.355` small-object recall at `107.2 ms` in the final oracle-rank benchmark artifact.
 
 The best strict-budget XNOR result was:
 
 | Route | Calls | Recall | Small Recall | Latency | Gain Recovery | Small Gain Recovery | Cost vs All |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| XNOR-320 tile-NMS K18, 320-trained checkpoint | 18 | 0.347 | 0.308 | 56.9 ms | 0.80 | 0.83 | 0.57 |
+| XNOR-320 tile-NMS K18, oracle-rank checkpoint | 18 | 0.344 | 0.309 | 63.8 ms | 0.80 | 0.83 | 0.59 |
 
 The best recall XNOR result was:
 
 | Route | Calls | Recall | Small Recall | Latency | Gain Recovery | Small Gain Recovery | Cost vs All |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| XNOR-320 tile-NMS K24, 320-trained checkpoint | 24 | 0.361 | 0.323 | 68.4 ms | 0.86 | 0.88 | 0.68 |
+| XNOR-320 tile-NMS K24, oracle-rank checkpoint | 24 | 0.361 | 0.320 | 75.8 ms | 0.86 | 0.87 | 0.71 |
 
-K18 is cheap enough but not accurate enough. K24 is accurate enough but not cheap enough.
+K18 is close but misses both the strict recall and latency targets. K24 recovers more recall, but it spends too much latency and too many detector crops to be the low-cost headline.
 
 ## Blocker
 
 Primary blocker: CPU XNOR scout latency plus remaining scout-ranking gap.
 
-Oracle-greedy proves the grid and detector can support the desired tradeoff: K12 reaches `0.363` recall and `0.329` small recall at `31.3 ms`. The learned GPU heatmap scout also reaches the target recovery at K20 with `51.4 ms`. The gap is therefore not the selective-tiling concept; it is the current native CPU XNOR scout implementation and ranking quality.
+Oracle-greedy proves the grid and detector can support the desired tradeoff: K12 reaches `0.363` recall and `0.329` small recall at `32.9 ms`, K18 reaches `0.384` recall and `0.345` small recall at `44.0 ms`, and K24 reaches `0.395` recall and `0.352` small recall at `56.8 ms`. The learned GPU heatmap scout remains a useful desktop reference, but the final gap is not the selective-tiling concept; it is the current native CPU XNOR scout implementation and fixed-K ranking quality.
 
 ## Report Framing
 
 Defensible claim:
 
-> A scout-guided selective tiling pipeline can recover most of exhaustive tiling's small-object recall at substantially lower detector cost. In our implementation, the learned heatmap scout met the target tradeoff, while the native CPU XNOR scout was implemented and benchmarked but did not beat the learned scout under the final latency-recall criterion.
+> A scout-guided selective tiling pipeline can recover much of exhaustive tiling's small-object recall at lower detector cost. Oracle selection demonstrates the opportunity; the native CPU XNOR scout is implemented and benchmarked, but its final detector-level result is partial validation rather than a full success against the strict K18 latency-recall target.
 
 Avoid claiming:
 

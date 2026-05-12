@@ -10,7 +10,7 @@ UAV image -> binary/XNOR scout tile scores -> top-K tiles -> YOLO on selected cr
 
 The current repo implements the verified binary core, VisDrone tile dataset generation, C-free and binary-XNOR scout features, a learned heatmap scout, scout recall evaluation, and YOLO selected-tile routing. Tiled detector runs can now use `--crop-source original` so the scout selects on the 640x640 grid while YOLO runs on original-resolution crops.
 
-See `docs/xnor_heatmap_final_decision.md` for the final binary/XNOR heatmap decision, `artifacts/benchmarks/xnor_final_router_2026-05-12.md` for the benchmark table, `docs/learned_heatmap_scout.md` for the learned heatmap route, `docs/final_project_claims.md` for the defensible novelty/claim framing, `docs/evaluation_protocol.md` for longer benchmark commands, `docs/binary_xnor_core.md` for the native binary core, and `docs/completion_audit.md` for the current phase-gate handoff.
+See `artifacts/benchmarks/oracle_rank_final/summary.md` for the final benchmark source of truth, `docs/report_finalization/` for report-ready tables/figures/claim checks, `docs/xnor_heatmap_final_decision.md` for the final binary/XNOR heatmap decision, `docs/learned_heatmap_scout.md` for the learned heatmap route, `docs/final_project_claims.md` for the defensible novelty/claim framing, `docs/evaluation_protocol.md` for longer benchmark commands, `docs/binary_xnor_core.md` for the native binary core, and `docs/completion_audit.md` for the phase-gate handoff history.
 
 ## Windows Quickstart
 
@@ -148,7 +148,7 @@ python scripts\run_yolo_tiles.py --selector learned-heatmap-live --crop-source o
 
 `learned-heatmap` and `learned-heatmap-live` are aliases for the same live route. They run one heatmap scout pass per image, convert the `80x80` logits into scores for the existing 49 tiles, then route the selected original-resolution crops to YOLO.
 
-Latest 100-image Windows result: the learned STE heatmap scout at K=12 reaches `0.289` detector recall and `0.251` small-object recall at `39.7 ms` mean latency. That beats the measured spatial K=12 route (`0.267` / `0.245` at `38.8 ms`) and the 8-filter binary-XNOR K=12 route (`0.258` / `0.244` at `65.5 ms`) on the same benchmark slice. See `docs/learned_heatmap_scout.md`.
+Final 100-image Windows result: exhaustive original-resolution tiling reaches `0.399` detector recall and `0.355` small-object recall at `107.2 ms`; oracle greedy K12 reaches `0.363` / `0.329` at `32.9 ms`; oracle-rank XNOR K18 reaches `0.344` / `0.309` at `63.8 ms`; oracle-rank XNOR K24 reaches `0.361` / `0.320` at `75.8 ms`. This is an honest partial validation of the binary/XNOR scout route, not a claim that it fully meets the strict K18 target. See `artifacts/benchmarks/oracle_rank_final/summary.md` and `docs/report_finalization/`.
 
 Run detector/router smoke checks:
 

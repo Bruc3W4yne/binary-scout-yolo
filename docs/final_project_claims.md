@@ -8,18 +8,18 @@ The contribution is the measured pipeline combination, not a new detector archit
 
 The high-resolution claim only applies when tiled detector runs use `--crop-source original`. In that mode the scout still selects tiles on the 640x640 grid, but YOLO sees crops from the original image and detections are projected back to the 640x640 evaluation canvas.
 
-## Strong Claim
+## Final Strong Claim
 
 The defensible claim is:
 
 ```text
-Scout-guided selective tiling can be measured against full-image YOLO, all-tile inference, random top-K, train-split spatial priors, heuristics, and oracle upper bounds. In the current full-val tile-label evaluation, the tiny spatial MLP scout selects higher-value tiles than random, a train-split spatial prior, and a content-only heuristic at K=8.
+Scout-guided selective tiling is a useful recall/latency tradeoff for UAV small-object detection. On the final 100-image VisDrone validation benchmark, full-image YOLO reached 0.084 small-object recall at 13.7 ms, while exhaustive original-resolution tiling reached 0.355 small-object recall at 107.2 ms. Oracle tile selection showed that most of this tiling benefit can be recovered with far fewer tiles.
 ```
 
-If original-crop detector benchmarks are positive, the stronger report claim is:
+The final binary/XNOR claim is partial validation:
 
 ```text
-Selected original-resolution tile inference recovers part of the all-tile recall gain over full-image YOLO while using K detector inputs instead of 49.
+The native CPU XNOR scout is implemented, measured, and aligned with the intended scout-router architecture, but it did not meet the strict K18 recall/latency target. Oracle-rank XNOR K18 reached 0.344 recall, 0.309 small recall, and 63.8 ms against a target of 0.355 / 0.318 / <=60.1 ms.
 ```
 
 ## Binary-XNOR Claim
@@ -32,7 +32,7 @@ This validates the intended architecture/operation split:
 CPU native XNOR scout selection -> GPU YOLO tile detection -> merged boxes
 ```
 
-The 640 scout is the exact-reference native route and remains slower than CUDA/PyTorch on the RTX 4090 workstation. The 320 route is the performance-aligned route: on the bounded 30-image smoke benchmark it reaches recall close to exhaustive tiling while using fewer detector calls and slightly lower latency.
+The 640 scout is the exact-reference native route and remains slower than CUDA/PyTorch on the RTX 4090 workstation. The 320 route is the performance-aligned route used for the final oracle-rank benchmark. It recovers meaningful tiling recall at K12-K24, but the final detector-level XNOR result is not the fastest or strongest route on the desktop benchmark.
 
 The older `binary-xnor-live` route is a separate feature/MLP ablation. It proves the repo has a narrow XNOR/popcount feature core and wrapper that can be tested and benchmarked, but it must not be presented as the final learned heatmap scout.
 
@@ -45,7 +45,7 @@ binary-xnor hybrid: XNOR-popcount tile summaries plus cheap tile geometry/spatia
 
 The hybrid route is still a binary-centered ablation because the image features come from packed bitplanes and C XNOR-popcount filters, but it must not be described as pure binary or as the PowerPoint-aligned learned scout. Latency claims for that ablation require `binary-xnor-live`, not cached features.
 
-For the final report, lead with `xnor-heatmap-320-live` when discussing the practical CPU-XNOR scout result, and use `xnor-heatmap-live` as the exact 640 reference route. Use the older 8-filter hybrid only as an ablation showing that narrow XNOR feature summaries can also drive a router. The pure 64-filter and 64-filter hybrid routes are useful ablations, not the deployable final route.
+For the final report, lead with `xnor-heatmap-320-live` and the oracle-rank final artifacts when discussing the practical CPU-XNOR scout result. Use older 8-filter, 16-filter, 64-filter, and feature/MLP binary routes only as historical ablations if there is space.
 
 ## Claims To Avoid
 
