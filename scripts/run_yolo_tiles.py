@@ -115,10 +115,26 @@ def yolo_device_arg(device: str):
     return 0 if device == "cuda" else "cpu"
 
 
+def git_commit() -> str:
+    try:
+        import subprocess
+
+        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, text=True).strip()
+    except Exception:
+        return "unknown"
+
+
 def torch_device_arg(device: str) -> torch.device:
     if device == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(device)
+
+
+def device_name(device) -> str:
+    if device != "cpu" and torch.cuda.is_available():
+        index = int(device) if isinstance(device, int) else torch.cuda.current_device()
+        return torch.cuda.get_device_name(index)
+    return "cpu"
 
 
 def is_live_scout_selector(selector: str) -> bool:
@@ -720,6 +736,8 @@ def main() -> int:
                 "small_area": args.small_area,
                 "medium_area": args.medium_area,
                 "device": str(device),
+                "device_name": device_name(device),
+                "git_commit": git_commit(),
                 "prior_split": args.prior_split if args.selector == "prior" else None,
                 "warmup_images": args.warmup_images,
                 "features": str(args.features) if args.features else None,
