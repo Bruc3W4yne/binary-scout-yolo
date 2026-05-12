@@ -410,6 +410,58 @@ KERNEL_EXPORT int xnor_multi_filter_conv_zero_pad(
     return 0;
 }
 
+KERNEL_EXPORT int bn_sign_pool2x2_i32_to_u8(
+    const int32_t *scores,
+    uint8_t       *output,
+    const float   *thresholds,
+    const uint8_t *greater_equal,
+    const uint8_t *fixed_values,
+    int n,
+    int rows,
+    int cols)
+{
+    if (!scores || !output || !thresholds || !greater_equal || !fixed_values) return -1;
+    if (n < 1 || rows < 2 || cols < 2) return -1;
+    if (rows % 2 != 0 || cols % 2 != 0) return -1;
+
+    int out_rows = rows / 2;
+    int out_cols = cols / 2;
+    size_t frame_size = (size_t)rows * (size_t)cols;
+    size_t out_frame_size = (size_t)out_rows * (size_t)out_cols;
+
+    #ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+    #endif
+    for (int f = 0; f < n; f++) {
+        const int32_t *src = scores + (size_t)f * frame_size;
+        uint8_t *dst = output + (size_t)f * out_frame_size;
+        float threshold = thresholds[f];
+        uint8_t ge = greater_equal[f];
+        uint8_t fixed = fixed_values[f];
+
+        for (int r = 0; r < out_rows; r++) {
+            for (int c = 0; c < out_cols; c++) {
+                int i0 = (2 * r) * cols + 2 * c;
+                int32_t v0 = src[i0];
+                int32_t v1 = src[i0 + 1];
+                int32_t v2 = src[i0 + cols];
+                int32_t v3 = src[i0 + cols + 1];
+
+                uint8_t b;
+                if (fixed <= 1) {
+                    b = fixed;
+                } else if (ge) {
+                    b = (v0 >= threshold || v1 >= threshold || v2 >= threshold || v3 >= threshold) ? 1u : 0u;
+                } else {
+                    b = (v0 <= threshold || v1 <= threshold || v2 <= threshold || v3 <= threshold) ? 1u : 0u;
+                }
+                dst[(size_t)r * (size_t)out_cols + (size_t)c] = b;
+            }
+        }
+    }
+    return 0;
+}
+
 
 /* --------------------------------------------------------------------------
  * float32_conv_nch_u8

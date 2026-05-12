@@ -199,6 +199,16 @@ def _load():
             ctypes.c_int, ctypes.c_int,
         ]
 
+        _lib.bn_sign_pool2x2_i32_to_u8.restype = ctypes.c_int
+        _lib.bn_sign_pool2x2_i32_to_u8.argtypes = [
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.POINTER(ctypes.c_uint8),
+            ctypes.POINTER(ctypes.c_float),
+            ctypes.POINTER(ctypes.c_uint8),
+            ctypes.POINTER(ctypes.c_uint8),
+            ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ]
+
         # int float32_conv_nch_u8(uint8*, float*, float*, int, int, int, int, int)
         _lib.float32_conv_nch_u8.restype = ctypes.c_int
         _lib.float32_conv_nch_u8.argtypes = [
@@ -422,6 +432,43 @@ def xnor_multi_filter_conv_zero_pad(
     )
     if rc != 0:
         raise ValueError(f"xnor_multi_filter_conv_zero_pad returned {rc}")
+    return output
+
+
+def bn_sign_pool2x2_i32_to_u8(
+    scores: np.ndarray,
+    thresholds: np.ndarray,
+    greater_equal: np.ndarray,
+    fixed_values: np.ndarray,
+) -> np.ndarray:
+    """
+    Apply BN sign thresholding and 2x2 max-pool to int32 score maps.
+
+    fixed_values uses 0/1 for constant channels and 255 for normal thresholded
+    channels.
+    """
+    lib = _load()
+    scores = _as_c_array("scores", scores, np.int32, ndim=3)
+    n, rows, cols = scores.shape
+    if rows % 2 or cols % 2:
+        raise ValueError(f"scores spatial dimensions must be even, got {(rows, cols)}")
+    thresholds = _as_c_array("thresholds", thresholds, np.float32, ndim=1)
+    greater_equal = _as_c_array("greater_equal", greater_equal, np.uint8, ndim=1)
+    fixed_values = _as_c_array("fixed_values", fixed_values, np.uint8, ndim=1)
+    _require_shape("thresholds", thresholds, (n,))
+    _require_shape("greater_equal", greater_equal, (n,))
+    _require_shape("fixed_values", fixed_values, (n,))
+    output = np.empty((n, rows // 2, cols // 2), dtype=np.uint8)
+    rc = lib.bn_sign_pool2x2_i32_to_u8(
+        scores.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
+        output.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
+        thresholds.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+        greater_equal.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
+        fixed_values.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
+        ctypes.c_int(n), ctypes.c_int(rows), ctypes.c_int(cols),
+    )
+    if rc != 0:
+        raise ValueError(f"bn_sign_pool2x2_i32_to_u8 returned {rc}")
     return output
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+import kernel_wrapper as kw
 from binary_layer import BinaryConvLayer
 from heatmap_scout import (
     BinaryConv2d,
@@ -26,6 +27,9 @@ class _Block:
     bn_bias: np.ndarray
     bn_mean: np.ndarray
     bn_std: np.ndarray
+    sign_threshold: np.ndarray
+    sign_ge: np.ndarray
+    sign_fixed: np.ndarray
 
 
 def _signed_weights(module: BinaryConv2d) -> np.ndarray:
@@ -57,22 +61,29 @@ class NativeXnorHeatmapScout:
         x = _as_bits(np.asarray(msb_planes, dtype=np.float32))
         timing = {"scout_pack_ms": 0.0, "scout_xnor_kernel_ms": 0.0, "scout_heatmap_postprocess_ms": 0.0}
 
-        for block in self.blocks:
+        for idx, block in enumerate(self.blocks):
             started = time.perf_counter()
             packed = block.conv.pack_input(x)
             timing["scout_pack_ms"] += (time.perf_counter() - started) * 1000.0
 
             started = time.perf_counter()
-            scores = block.conv.forward_packed(packed, zero_padding=True).astype(np.float32, copy=False)
+            scores = block.conv.forward_packed(packed, zero_padding=True)
             timing["scout_xnor_kernel_ms"] += (time.perf_counter() - started) * 1000.0
 
             started = time.perf_counter()
-            scores = (scores - block.bn_mean[:, None, None]) / block.bn_std[:, None, None]
-            scores = scores * block.bn_weight[:, None, None] + block.bn_bias[:, None, None]
-            x = _max_pool2x2(np.clip(scores, -1.0, 1.0))
+            if idx < len(self.blocks) - 1:
+                x = kw.bn_sign_pool2x2_i32_to_u8(
+                    scores,
+                    block.sign_threshold,
+                    block.sign_ge,
+                    block.sign_fixed,
+                )
+            else:
+                scores = scores.astype(np.float32, copy=False)
+                scores = (scores - block.bn_mean[:, None, None]) / block.bn_std[:, None, None]
+                scores = scores * block.bn_weight[:, None, None] + block.bn_bias[:, None, None]
+                x = _max_pool2x2(np.clip(scores, -1.0, 1.0))
             timing["scout_heatmap_postprocess_ms"] += (time.perf_counter() - started) * 1000.0
-            if block is not self.blocks[-1]:
-                x = _as_bits(x)
 
         started = time.perf_counter()
         logits = np.tensordot(self.head_weight, x.astype(np.float32, copy=False), axes=(0, 0)) + self.head_bias
@@ -93,12 +104,26 @@ def _build_block(block: torch.nn.Module) -> _Block:
         kW=weights.shape[3],
     )
     layer.set_weights(weights)
+    bn_weight = bn.weight.detach().cpu().numpy().astype(np.float32)
+    bn_bias = bn.bias.detach().cpu().numpy().astype(np.float32)
+    bn_mean = bn.running_mean.detach().cpu().numpy().astype(np.float32)
+    bn_std = np.sqrt(bn.running_var.detach().cpu().numpy().astype(np.float32) + float(bn.eps))
+    scale = bn_weight / bn_std
+    fixed = np.full(scale.shape, 255, dtype=np.uint8)
+    stable = np.abs(scale) >= 1e-12
+    fixed[~stable] = (bn_bias[~stable] >= 0.0).astype(np.uint8)
+    thresholds = np.zeros_like(scale, dtype=np.float32)
+    thresholds[stable] = bn_mean[stable] - bn_bias[stable] / scale[stable]
+
     return _Block(
         conv=layer,
-        bn_weight=bn.weight.detach().cpu().numpy().astype(np.float32),
-        bn_bias=bn.bias.detach().cpu().numpy().astype(np.float32),
-        bn_mean=bn.running_mean.detach().cpu().numpy().astype(np.float32),
-        bn_std=np.sqrt(bn.running_var.detach().cpu().numpy().astype(np.float32) + float(bn.eps)),
+        bn_weight=bn_weight,
+        bn_bias=bn_bias,
+        bn_mean=bn_mean,
+        bn_std=bn_std,
+        sign_threshold=thresholds,
+        sign_ge=(scale >= 0.0).astype(np.uint8),
+        sign_fixed=fixed,
     )
 
 
