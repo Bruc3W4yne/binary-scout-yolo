@@ -31,9 +31,13 @@ from routing import (  # noqa: E402
     select_records_oracle_greedy,
 )
 from scout import bitplane_stats_features  # noqa: E402
-from xnor_heatmap_scout import live_xnor_heatmap_scores, load_xnor_live_checkpoint  # noqa: E402
+from xnor_heatmap_scout import LITE_SCOUT_IMAGE_SIZE, live_xnor_heatmap_scores, load_xnor_live_checkpoint  # noqa: E402
 
-XNOR_HEATMAP_MODES = {"xnor-heatmap-live", "learned-xnor-heatmap-live"}
+XNOR_HEATMAP_MODES = {"xnor-heatmap-live", "xnor-heatmap-320-live", "learned-xnor-heatmap-live"}
+
+
+def xnor_scout_image_size(mode: str) -> int:
+    return LITE_SCOUT_IMAGE_SIZE if mode == "xnor-heatmap-320-live" else 640
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -274,6 +278,7 @@ def parse_args() -> argparse.Namespace:
             "learned-heatmap",
             "learned-heatmap-live",
             "xnor-heatmap-live",
+            "xnor-heatmap-320-live",
             "learned-xnor-heatmap-live",
             "heuristic",
             "random",
@@ -311,7 +316,7 @@ def main() -> int:
             if args.checkpoint is None:
                 raise ValueError("--mode learned-heatmap requires --checkpoint")
             checkpoint = (
-                load_xnor_live_checkpoint(args.checkpoint)
+                load_xnor_live_checkpoint(args.checkpoint, xnor_scout_image_size(args.mode))
                 if args.mode in XNOR_HEATMAP_MODES
                 else load_live_checkpoint(args.checkpoint, args.scout_device)
             )

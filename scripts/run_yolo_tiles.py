@@ -56,6 +56,7 @@ from scout import (  # noqa: E402
     spatial_tile_features,
 )
 from xnor_heatmap_scout import (  # noqa: E402
+    LITE_SCOUT_IMAGE_SIZE,
     live_xnor_heatmap_scores,
     load_xnor_live_checkpoint,
 )
@@ -70,6 +71,7 @@ LIVE_SCOUT_PHASES = [
     "threshold",
     "tile_summary",
     "spatial",
+    "heatmap_resize",
     "heatmap_preprocess",
     "heatmap_model",
     "heatmap_postprocess",
@@ -150,16 +152,27 @@ def is_live_scout_selector(selector: str) -> bool:
         "learned-heatmap",
         "learned-heatmap-live",
         "xnor-heatmap-live",
+        "xnor-heatmap-320-live",
         "learned-xnor-heatmap-live",
     }
 
 
 def is_heatmap_selector(selector: str) -> bool:
-    return selector in {"learned-heatmap", "learned-heatmap-live", "xnor-heatmap-live", "learned-xnor-heatmap-live"}
+    return selector in {
+        "learned-heatmap",
+        "learned-heatmap-live",
+        "xnor-heatmap-live",
+        "xnor-heatmap-320-live",
+        "learned-xnor-heatmap-live",
+    }
 
 
 def is_xnor_heatmap_selector(selector: str) -> bool:
-    return selector in {"xnor-heatmap-live", "learned-xnor-heatmap-live"}
+    return selector in {"xnor-heatmap-live", "xnor-heatmap-320-live", "learned-xnor-heatmap-live"}
+
+
+def xnor_scout_image_size(selector: str) -> int:
+    return LITE_SCOUT_IMAGE_SIZE if selector == "xnor-heatmap-320-live" else 640
 
 
 def sync_cuda(device) -> None:
@@ -492,7 +505,7 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
                 raise ValueError("--selector binary-xnor-live requires a binary-xnor checkpoint")
             if args.selector in {"learned-heatmap", "learned-heatmap-live"} and not str(scout_route).startswith("learned-heatmap"):
                 raise ValueError(f"--selector {args.selector} requires a learned heatmap checkpoint")
-            if is_xnor_heatmap_selector(args.selector) and scout_route != "xnor-heatmap-live":
+            if is_xnor_heatmap_selector(args.selector) and scout_route != args.selector.replace("learned-xnor", "xnor"):
                 raise ValueError("--selector xnor-heatmap-live requires a STE heatmap checkpoint")
             live_scout_timing["scout_resize_ms"] = resize_preprocess_ms
         tile_scores = None
@@ -674,6 +687,7 @@ def parse_args() -> argparse.Namespace:
             "learned-heatmap",
             "learned-heatmap-live",
             "xnor-heatmap-live",
+            "xnor-heatmap-320-live",
             "learned-xnor-heatmap-live",
         ],
         default="full",
@@ -727,7 +741,7 @@ def main() -> int:
                 raise ValueError(f"--selector {args.selector} requires --checkpoint")
             args.scout_device = torch_device_arg(args.device)
             if is_xnor_heatmap_selector(args.selector):
-                args.scout_checkpoint = load_xnor_live_checkpoint(args.checkpoint)
+                args.scout_checkpoint = load_xnor_live_checkpoint(args.checkpoint, xnor_scout_image_size(args.selector))
             elif is_heatmap_selector(args.selector):
                 args.scout_checkpoint = load_heatmap_checkpoint(args.checkpoint, args.scout_device)
             else:

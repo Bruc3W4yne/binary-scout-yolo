@@ -10,12 +10,13 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from binary_layer import BinaryConvLayer  # noqa: E402
-from heatmap_scout import HeatmapScout, live_heatmap_scores, load_live_checkpoint, save_checkpoint  # noqa: E402
+from heatmap_scout import HeatmapScout, live_heatmap_scores, load_live_checkpoint, rgb_to_msb_planes, save_checkpoint, tile_logits_from_heatmap  # noqa: E402
 from preprocess import make_tiles  # noqa: E402
 from xnor_heatmap_scout import NativeXnorHeatmapScout, live_xnor_heatmap_scores, load_xnor_live_checkpoint  # noqa: E402
 
@@ -89,11 +90,45 @@ def verify_live_scores_route() -> None:
     expect(max(diffs) < 1e-4, f"native tile scores drifted, max_abs_diff={max(diffs)}")
 
 
+def verify_lite_live_scores_route() -> None:
+    tiles = make_tiles(640)
+    records = [
+        {
+            "stem": "synthetic",
+            "tile_id": tile.tile_id,
+            "tile_row": tile.row,
+            "tile_col": tile.col,
+            "tile": tile.xyxy(),
+            "img_size": 640,
+        }
+        for tile in tiles
+    ]
+    rgb = np.random.default_rng(17).integers(0, 256, size=(640, 640, 3), dtype=np.uint8)
+    resized = np.asarray(Image.fromarray(rgb).resize((320, 320), Image.BILINEAR), dtype=np.uint8)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "heatmap.pt"
+        model = HeatmapScout("ste").eval()
+        save_checkpoint(model, path, {"dataset": "synthetic"}, ROOT)
+        checkpoint = load_xnor_live_checkpoint(path, scout_image_size=320)
+        native_scores, timing, route = live_xnor_heatmap_scores(rgb, records, checkpoint)
+
+        with torch.no_grad():
+            logits = model(torch.from_numpy(rgb_to_msb_planes(resized)[None]))
+            expected = tile_logits_from_heatmap(logits, tiles, image_size=640).squeeze(0).numpy()
+
+    expect(route == "xnor-heatmap-320-live", f"bad lite route: {route}")
+    expect("scout_heatmap_resize_ms" in timing, "lite route should time scout resize")
+    diffs = [abs(native_scores[("synthetic", tile.tile_id)] - float(score)) for tile, score in zip(tiles, expected)]
+    expect(max(diffs) < 1e-4, f"lite native tile scores drifted, max_abs_diff={max(diffs)}")
+
+
 def main() -> int:
     checks = [
         ("zero_pad_conv_parity", verify_zero_pad_conv_parity),
         ("full_route_parity", verify_full_route_parity),
         ("live_scores_route", verify_live_scores_route),
+        ("lite_live_scores_route", verify_lite_live_scores_route),
     ]
     print("=== verify_xnor_heatmap_scout.py ===")
     try:

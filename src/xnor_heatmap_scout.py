@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from PIL import Image
 
 import kernel_wrapper as kw
 from binary_layer import BinaryConvLayer
@@ -19,6 +20,9 @@ from heatmap_scout import (
     tile_logits_from_heatmap,
 )
 from preprocess import Tile
+
+DEFAULT_SCOUT_IMAGE_SIZE = 640
+LITE_SCOUT_IMAGE_SIZE = 320
 
 
 @dataclass
@@ -130,10 +134,19 @@ def _build_block(block: torch.nn.Module) -> _Block:
     )
 
 
-def load_xnor_live_checkpoint(path: Path) -> dict:
+def _resize_rgb(rgb: np.ndarray, image_size: int) -> np.ndarray:
+    if rgb.shape[0] == image_size and rgb.shape[1] == image_size:
+        return rgb
+    return np.asarray(Image.fromarray(rgb).resize((image_size, image_size), Image.BILINEAR), dtype=np.uint8)
+
+
+def load_xnor_live_checkpoint(path: Path, scout_image_size: int = DEFAULT_SCOUT_IMAGE_SIZE) -> dict:
     model, checkpoint = load_checkpoint(path, map_location="cpu")
+    if scout_image_size < 64 or scout_image_size % 8:
+        raise ValueError("scout_image_size must be >=64 and divisible by 8")
     checkpoint["model"] = NativeXnorHeatmapScout(model)
-    checkpoint["route"] = "xnor-heatmap-live"
+    checkpoint["scout_image_size"] = int(scout_image_size)
+    checkpoint["route"] = "xnor-heatmap-live" if scout_image_size == DEFAULT_SCOUT_IMAGE_SIZE else f"xnor-heatmap-{scout_image_size}-live"
     return checkpoint
 
 
@@ -144,16 +157,22 @@ def live_xnor_heatmap_scores(
 ) -> tuple[dict[tuple[str, int], float], dict[str, float], str]:
     tiles = [Tile(**{k: int(v) for k, v in record_tile(record).items()}) for record in sorted(records, key=lambda item: int(item["tile_id"]))]
     timing: dict[str, float] = {}
+    source_image_size = int(records[0].get("img_size", rgb.shape[0]))
+    scout_image_size = int(checkpoint.get("scout_image_size", DEFAULT_SCOUT_IMAGE_SIZE))
 
     started = time.perf_counter()
-    planes = rgb_to_msb_planes(rgb)
+    scout_rgb = _resize_rgb(rgb, scout_image_size)
+    timing["scout_heatmap_resize_ms"] = (time.perf_counter() - started) * 1000.0
+
+    started = time.perf_counter()
+    planes = rgb_to_msb_planes(scout_rgb)
     timing["scout_heatmap_preprocess_ms"] = (time.perf_counter() - started) * 1000.0
 
     logits, model_timing = checkpoint["model"].logits(planes)
     timing.update(model_timing)
 
     started = time.perf_counter()
-    scores = tile_logits_from_heatmap(torch.from_numpy(logits), tiles).squeeze(0).numpy()
+    scores = tile_logits_from_heatmap(torch.from_numpy(logits), tiles, image_size=source_image_size).squeeze(0).numpy()
     timing["scout_heatmap_tile_score_ms"] = (time.perf_counter() - started) * 1000.0
 
     stem = records[0]["stem"]
