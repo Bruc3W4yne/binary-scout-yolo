@@ -10,7 +10,7 @@ UAV image -> binary/XNOR scout tile scores -> top-K tiles -> YOLO on selected cr
 
 The current repo implements the verified binary core, VisDrone tile dataset generation, C-free and binary-XNOR scout features, a learned heatmap scout, scout recall evaluation, and YOLO selected-tile routing. Tiled detector runs can now use `--crop-source original` so the scout selects on the 640x640 grid while YOLO runs on original-resolution crops.
 
-See `docs/final_binary_pass_results.md` for the latest Windows RTX 4090 binary-live results, `docs/learned_heatmap_scout.md` for the learned binary heatmap route, `docs/current_results.md` for historical smoke results and caveats, `docs/final_project_claims.md` for the defensible novelty/claim framing, `docs/evaluation_protocol.md` for longer benchmark commands, `docs/binary_xnor_core.md` for the native binary core, and `docs/completion_audit.md` for the current phase-gate handoff.
+See `docs/xnor_heatmap_final_decision.md` for the final binary/XNOR heatmap decision, `artifacts/benchmarks/xnor_final_router_2026-05-12.md` for the benchmark table, `docs/learned_heatmap_scout.md` for the learned heatmap route, `docs/final_project_claims.md` for the defensible novelty/claim framing, `docs/evaluation_protocol.md` for longer benchmark commands, `docs/binary_xnor_core.md` for the native binary core, and `docs/completion_audit.md` for the current phase-gate handoff.
 
 ## Windows Quickstart
 
