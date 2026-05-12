@@ -24,18 +24,28 @@ Selected original-resolution tile inference recovers part of the all-tile recall
 
 ## Binary-XNOR Claim
 
-The native C binary path is a verified edge-oriented scout feature implementation. It proves the project has a narrow XNOR/popcount core and Python wrapper that can be tested and benchmarked.
+The PowerPoint-aligned binary route is `xnor-heatmap-live`: the learned STE heatmap scout runs its binary convolution body through native packed XNOR-popcount on CPU, ranks top-K tiles, and YOLO detects only those selected crops on the GPU.
 
-The final binary comparison should separate:
+This validates the intended architecture/operation split:
+
+```text
+CPU native XNOR scout selection -> GPU YOLO tile detection -> merged boxes
+```
+
+The current benchmark does not prove that the CPU XNOR scout is already negligible-cost. On the RTX 4090 workstation, CUDA/PyTorch is faster for the same scout. The honest claim is that the binary/XNOR scout is now integrated and measured end to end, with a clear path to edge hardware or smaller-scout optimization.
+
+The older `binary-xnor-live` route is a separate feature/MLP ablation. It proves the repo has a narrow XNOR/popcount feature core and wrapper that can be tested and benchmarked, but it must not be presented as the final learned heatmap scout.
+
+That older binary comparison should separate:
 
 ```text
 binary-xnor pure: XNOR-popcount tile summaries only
 binary-xnor hybrid: XNOR-popcount tile summaries plus cheap tile geometry/spatial-prior features
 ```
 
-The hybrid route is still a binary-centered scout because the image features come from packed bitplanes and C XNOR-popcount filters, but it must not be described as pure binary. Binary latency claims require `binary-xnor-live`, not cached features.
+The hybrid route is still a binary-centered ablation because the image features come from packed bitplanes and C XNOR-popcount filters, but it must not be described as pure binary or as the PowerPoint-aligned learned scout. Latency claims for that ablation require `binary-xnor-live`, not cached features.
 
-After the final binary pass, the most defensible binary result is the 8-filter live hybrid: it improves over the previous binary scout, keeps the XNOR-popcount visual path, and is faster than exhaustive tiling, but it is still slower than the spatial scout. The pure 64-filter binary route is now measured as a live detector row and proves the ablation, but it is too slow to be the practical route. The 64-filter hybrid is a useful high-recall ablation, not the deployable configuration.
+For the final report, lead with `xnor-heatmap-live` when discussing PowerPoint alignment. Use the older 8-filter hybrid only as an ablation showing that narrow XNOR feature summaries can also drive a router. The pure 64-filter and 64-filter hybrid routes are useful ablations, not the deployable final route.
 
 ## Claims To Avoid
 

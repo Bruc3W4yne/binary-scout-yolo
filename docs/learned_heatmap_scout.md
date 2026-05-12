@@ -8,6 +8,13 @@ full image -> top-4 grayscale MSB bitplanes -> learned heatmap scout -> top-K ti
 
 The scout is still a router, not a replacement detector. YOLO remains responsible for final object detection. The new part is that tile selection can be learned from image pixels instead of using fixed XNOR summaries or hand-written spatial priors.
 
+For PowerPoint alignment, use `xnor-heatmap-live`: it loads the STE heatmap
+checkpoint, runs the learned binary convolution body through the native packed
+XNOR-popcount kernels on CPU, ranks top-K tiles, then sends those crops to YOLO
+on the GPU. `learned-heatmap-live` is the CUDA/PyTorch reference route for the
+same trained scout. `binary-xnor-live` is an older feature/MLP ablation, not the
+final learned heatmap scout.
+
 ## What Is Implemented
 
 - `src/heatmap_scout.py`
@@ -27,8 +34,14 @@ The scout is still a router, not a replacement detector. YOLO remains responsibl
 - `scripts/run_yolo_tiles.py`
   - adds `learned-heatmap` and `learned-heatmap-live`
   - routes selected original-resolution tile crops through the existing YOLO merge path
+- `src/xnor_heatmap_scout.py`
+  - exports the STE scout into a native CPU route
+  - uses packed XNOR-popcount for the learned binary conv layers
+  - keeps YOLO on the GPU for selected tile detection
 - `scripts/verify_heatmap_scout.py`
   - verifies target rasterization, float/STE shapes and backprop, deterministic top-K, checkpoint load, export, and live scoring
+- `scripts/verify_xnor_heatmap_scout.py`
+  - verifies native XNOR accumulator parity and full-route parity against the PyTorch STE scout
 
 ## Commands
 
@@ -68,7 +81,13 @@ python scripts\run_yolo_tiles.py --selector scout-live --crop-source original --
 python scripts\run_yolo_tiles.py --selector binary-xnor-live --crop-source original --top-k 8 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\scout_binary_xnor8_hybrid_mlp\scout_binary_xnor_hybrid.pt
 python scripts\run_yolo_tiles.py --selector learned-heatmap-live --crop-source original --top-k 8 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\heatmap_scout\heatmap_ste.pt
 python scripts\run_yolo_tiles.py --selector learned-heatmap-live --crop-source original --top-k 12 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\heatmap_scout\heatmap_ste.pt
+python scripts\run_yolo_tiles.py --selector xnor-heatmap-live --crop-source original --top-k 8 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\heatmap_scout\heatmap_ste.pt
 ```
+
+`xnor-heatmap-live` keeps selection on the CPU/native XNOR path and detector
+work on the GPU. On an RTX 4090 this is slower than the CUDA/PyTorch scout, but
+it is the route that validates the architecture/operation-layer split from the
+presentation.
 
 ## Windows RTX 4090 Results
 

@@ -99,7 +99,7 @@ python scripts\train_scout.py --train-features data\tile_features\binary_xnor_hy
 python scripts\evaluate_scout_recall.py --features data\tile_features\binary_xnor_hybrid_val.npz --checkpoint runs\scout_binary_xnor_hybrid_mlp\scout_binary_xnor_hybrid.pt --mode scout --top-k-values 4 8 12 16 20
 ```
 
-For the practical live binary route, reuse the full 64-filter binary cache and keep a smaller filter budget before adding spatial features:
+For the older live binary feature/MLP ablation, reuse the full 64-filter binary cache and keep a smaller filter budget before adding spatial features:
 
 ```powershell
 python scripts\add_spatial_features.py --features data\tile_features\binary_xnor_train.npz --out data\tile_features\binary_xnor8_hybrid_train.npz --keep-first-features 8
@@ -118,6 +118,16 @@ python scripts\evaluate_heatmap_scout_recall.py --checkpoint runs\heatmap_scout\
 python scripts\evaluate_heatmap_scout_recall.py --checkpoint runs\heatmap_scout\heatmap_ste.pt --mode learned-heatmap --top-k-values 8 12 --device cuda --out data\results_heatmap_scout_recall_learned_heatmap_ste.json
 python scripts\evaluate_heatmap_scout_recall.py --mode random --random-trials 5 --top-k-values 8 12
 python scripts\evaluate_heatmap_scout_recall.py --mode heuristic --top-k-values 8 12
+```
+
+For the PowerPoint-aligned native binary/XNOR route, run the same STE checkpoint through `xnor-heatmap-live`. This keeps tile selection on the CPU native XNOR path while YOLO detection remains on the GPU:
+
+```powershell
+mingw32-make clean
+mingw32-make
+python scripts\verify_xnor_heatmap_scout.py
+python scripts\evaluate_heatmap_scout_recall.py --mode xnor-heatmap-live --checkpoint runs\heatmap_scout\heatmap_ste.pt --top-k-values 3 5 8 12 --device cuda
+python scripts\run_yolo_tiles.py --selector xnor-heatmap-live --crop-source original --top-k 8 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\heatmap_scout\heatmap_ste.pt
 ```
 
 Run the learned scout in the timed YOLO crop router:

@@ -1,6 +1,9 @@
 # Binary XNOR Core
 
-This project uses binary/XNOR-popcount code as a cheap scout feature path, not as a full detector replacement.
+This document covers the older `binary-xnor-live` feature/MLP ablation. The
+PowerPoint-aligned final route is `xnor-heatmap-live`, where native
+XNOR-popcount accelerates the learned heatmap scout's binary convolution body.
+Neither route is a full detector replacement.
 
 ## What It Does
 
@@ -29,7 +32,7 @@ apply_threshold(scores) -> [filters, H, W] uint8 maps
 
 `forward_packed` uses the same native kernel as `forward`; it exists so live benchmarks can time bitplane extraction, packing, XNOR-popcount, thresholding, tile summaries, and MLP scoring separately.
 
-`src/scout.py` exposes `BinaryXnorExtractor`, which reuses one `BinaryConvLayer` across a feature extraction run and records binary metadata:
+`src/scout.py` exposes `BinaryXnorExtractor`, which reuses one `BinaryConvLayer` across a feature extraction run and records binary metadata. This is useful as a baseline and ablation, but it is not the final learned heatmap scout:
 
 ```text
 filter count
@@ -54,7 +57,9 @@ The default random binary filters are learned object detectors.
 The honest claim is narrower:
 
 ```text
-The repo contains a verified native XNOR-popcount feature extractor that can produce tile features for a scout/router pipeline.
+The repo contains verified native XNOR-popcount primitives. The final route
+uses them inside the learned heatmap scout; this older feature extractor remains
+an ablation.
 ```
 
 ## Verification
