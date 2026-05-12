@@ -132,6 +132,13 @@ python scripts\run_yolo_tiles.py --selector xnor-heatmap-live --crop-source orig
 python scripts\run_yolo_tiles.py --selector xnor-heatmap-320-live --crop-source original --top-k 36 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\heatmap_scout\heatmap_ste.pt
 ```
 
+To test the cheaper 320-pixel XNOR scout fairly, train an STE scout at the same input size while keeping tile coordinates at 640:
+
+```powershell
+python scripts\train_heatmap_scout.py --variant ste --input-size 320 --init runs\heatmap_scout\heatmap_ste.pt --train-root data\VisDrone2019-DET-train --val-root data\VisDrone2019-DET-val --epochs 5 --batch 16 --workers 4 --lr 1e-4 --device cuda --out runs\heatmap_scout\heatmap_ste_320.pt
+python scripts\run_yolo_tiles.py --selector xnor-heatmap-320-live --selection-policy tile-nms --crop-source original --top-k 20 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\heatmap_scout\heatmap_ste_320.pt
+```
+
 Run the learned scout in the timed YOLO crop router:
 
 ```powershell

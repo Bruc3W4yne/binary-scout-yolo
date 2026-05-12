@@ -34,8 +34,17 @@ from preprocess import Box, load_image_size, make_tiles  # noqa: E402
 
 
 class VisDroneHeatmapDataset(Dataset):
-    def __init__(self, root: Path, max_images: int = 0):
+    def __init__(
+        self,
+        root: Path,
+        max_images: int = 0,
+        input_size: int = IMAGE_SIZE,
+        coord_size: int = IMAGE_SIZE,
+    ):
         self.root = root
+        self.input_size = int(input_size)
+        self.coord_size = int(coord_size)
+        self.heatmap_size = self.input_size // 8
         self.image_dir = root / "images"
         self.annotation_dir = root / "annotations"
         self.stems = [path.stem for path in sorted(self.image_dir.glob("*.jpg"))]
@@ -43,7 +52,7 @@ class VisDroneHeatmapDataset(Dataset):
             self.stems = self.stems[:max_images]
         if not self.stems:
             raise FileNotFoundError(f"no .jpg images found in {self.image_dir}")
-        self.tiles = make_tiles(img_size=IMAGE_SIZE)
+        self.tiles = make_tiles(img_size=self.coord_size)
 
     def __len__(self) -> int:
         return len(self.stems)
@@ -54,39 +63,76 @@ class VisDroneHeatmapDataset(Dataset):
         ann_path = self.annotation_dir / f"{stem}.txt"
         orig_size = load_image_size(image_path)
         with Image.open(image_path) as image:
-            rgb = np.asarray(image.convert("RGB").resize((IMAGE_SIZE, IMAGE_SIZE), Image.LANCZOS), dtype=np.uint8)
-        boxes = load_scaled_boxes(ann_path, orig_size, image_size=IMAGE_SIZE)
-        return sample_tensors(rgb, boxes, self.tiles, stem)
+            rgb = np.asarray(
+                image.convert("RGB").resize((self.input_size, self.input_size), Image.LANCZOS),
+                dtype=np.uint8,
+            )
+        boxes = load_scaled_boxes(ann_path, orig_size, image_size=self.coord_size)
+        return sample_tensors(rgb, boxes, self.tiles, stem, self.coord_size, self.heatmap_size)
 
 
 class SyntheticHeatmapDataset(Dataset):
-    def __init__(self, images: int, seed: int = 42):
+    def __init__(
+        self,
+        images: int,
+        seed: int = 42,
+        input_size: int = IMAGE_SIZE,
+        coord_size: int = IMAGE_SIZE,
+    ):
         self.images = int(images)
         self.seed = int(seed)
-        self.tiles = make_tiles(img_size=IMAGE_SIZE)
+        self.input_size = int(input_size)
+        self.coord_size = int(coord_size)
+        self.heatmap_size = self.input_size // 8
+        self.tiles = make_tiles(img_size=self.coord_size)
 
     def __len__(self) -> int:
         return self.images
 
     def __getitem__(self, idx: int) -> dict:
         rng = np.random.default_rng(self.seed + idx)
-        rgb = rng.integers(0, 256, size=(IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)
+        rgb = rng.integers(0, 256, size=(self.input_size, self.input_size, 3), dtype=np.uint8)
         boxes = []
         for _ in range(1 + idx % 3):
             w = int(rng.integers(6, 48))
             h = int(rng.integers(6, 48))
-            x1 = int(rng.integers(0, IMAGE_SIZE - w))
-            y1 = int(rng.integers(0, IMAGE_SIZE - h))
-            rgb[y1 : y1 + h, x1 : x1 + w] = np.array([255, 255, 255], dtype=np.uint8)
+            x1 = int(rng.integers(0, self.coord_size - w))
+            y1 = int(rng.integers(0, self.coord_size - h))
+            sx = self.input_size / self.coord_size
+            rx1 = max(0, min(self.input_size - 1, int(round(x1 * sx))))
+            ry1 = max(0, min(self.input_size - 1, int(round(y1 * sx))))
+            rx2 = max(rx1 + 1, min(self.input_size, int(round((x1 + w) * sx))))
+            ry2 = max(ry1 + 1, min(self.input_size, int(round((y1 + h) * sx))))
+            rgb[ry1:ry2, rx1:rx2] = np.array([255, 255, 255], dtype=np.uint8)
             boxes.append(Box(float(x1), float(y1), float(x1 + w), float(y1 + h), 0, 1))
-        return sample_tensors(rgb, boxes, self.tiles, f"synthetic_{idx:05d}")
+        return sample_tensors(
+            rgb,
+            boxes,
+            self.tiles,
+            f"synthetic_{idx:05d}",
+            self.coord_size,
+            self.heatmap_size,
+        )
 
 
-def sample_tensors(rgb: np.ndarray, boxes: list[Box], tiles, stem: str) -> dict:
+def sample_tensors(
+    rgb: np.ndarray,
+    boxes: list[Box],
+    tiles,
+    stem: str,
+    coord_size: int = IMAGE_SIZE,
+    heatmap_size: int = HEATMAP_SIZE,
+) -> dict:
     return {
         "stem": stem,
         "planes": torch.from_numpy(rgb_to_msb_planes(rgb)),
-        "heatmap": torch.from_numpy(heatmap_target_from_boxes(boxes)),
+        "heatmap": torch.from_numpy(
+            heatmap_target_from_boxes(
+                boxes,
+                image_size=coord_size,
+                heatmap_size=heatmap_size,
+            )
+        ),
         "tile_targets": torch.from_numpy(tile_targets_from_boxes(tiles, boxes)),
     }
 
@@ -109,7 +155,14 @@ def estimate_pos_weight(dataset: Dataset, sample_limit: int) -> float:
 
 
 @torch.no_grad()
-def evaluate(model: HeatmapScout, loader: DataLoader, device: torch.device, tiles, pos_weight: torch.Tensor) -> dict:
+def evaluate(
+    model: HeatmapScout,
+    loader: DataLoader,
+    device: torch.device,
+    tiles,
+    pos_weight: torch.Tensor,
+    coord_size: int,
+) -> dict:
     model.eval()
     total_loss = dense = dice = tile = 0.0
     batches = 0
@@ -118,7 +171,14 @@ def evaluate(model: HeatmapScout, loader: DataLoader, device: torch.device, tile
         heatmap = batch["heatmap"].to(device)
         tile_targets = batch["tile_targets"].to(device)
         logits = model(planes)
-        loss, parts = heatmap_scout_loss(logits, heatmap, tile_targets, tiles, pos_weight)
+        loss, parts = heatmap_scout_loss(
+            logits,
+            heatmap,
+            tile_targets,
+            tiles,
+            pos_weight,
+            image_size=coord_size,
+        )
         total_loss += float(loss.item())
         dense += parts["dense_bce"]
         dice += parts["dice"]
@@ -141,13 +201,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", type=Path, default=ROOT / "runs" / "heatmap_scout" / "heatmap_scout.pt")
     parser.add_argument("--variant", choices=["float", "ste"], default="float")
     parser.add_argument("--init", type=Path, default=None)
+    parser.add_argument(
+        "--input-size",
+        type=int,
+        default=IMAGE_SIZE,
+        help="scout input size; tile coordinates stay on 640",
+    )
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch", type=int, default=4)
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--max-train-images", type=int, default=0)
     parser.add_argument("--max-val-images", type=int, default=0)
-    parser.add_argument("--synthetic-images", type=int, default=0, help="use synthetic data instead of VisDrone")
+    parser.add_argument(
+        "--synthetic-images",
+        type=int,
+        default=0,
+        help="use synthetic data instead of VisDrone",
+    )
     parser.add_argument("--pos-weight-samples", type=int, default=256)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
@@ -167,15 +238,38 @@ def main() -> int:
             raise ValueError("--batch must be positive")
         if args.workers < 0:
             raise ValueError("--workers must be nonnegative")
+        if args.input_size < 64 or args.input_size % 8:
+            raise ValueError("--input-size must be >=64 and divisible by 8")
 
         device = choose_device(args.device)
+        coord_size = IMAGE_SIZE
         if args.synthetic_images:
-            train_ds = SyntheticHeatmapDataset(args.synthetic_images, seed=args.seed)
-            val_ds = SyntheticHeatmapDataset(max(1, min(args.synthetic_images, 8)), seed=args.seed + 10000)
+            train_ds = SyntheticHeatmapDataset(
+                args.synthetic_images,
+                seed=args.seed,
+                input_size=args.input_size,
+                coord_size=coord_size,
+            )
+            val_ds = SyntheticHeatmapDataset(
+                max(1, min(args.synthetic_images, 8)),
+                seed=args.seed + 10000,
+                input_size=args.input_size,
+                coord_size=coord_size,
+            )
             dataset_name = "synthetic"
         else:
-            train_ds = VisDroneHeatmapDataset(args.train_root, max_images=args.max_train_images)
-            val_ds = VisDroneHeatmapDataset(args.val_root, max_images=args.max_val_images)
+            train_ds = VisDroneHeatmapDataset(
+                args.train_root,
+                max_images=args.max_train_images,
+                input_size=args.input_size,
+                coord_size=coord_size,
+            )
+            val_ds = VisDroneHeatmapDataset(
+                args.val_root,
+                max_images=args.max_val_images,
+                input_size=args.input_size,
+                coord_size=coord_size,
+            )
             dataset_name = "visdrone"
 
         pin_memory = device.type == "cuda"
@@ -193,7 +287,7 @@ def main() -> int:
             num_workers=args.workers,
             pin_memory=pin_memory,
         )
-        tiles = make_tiles(img_size=IMAGE_SIZE)
+        tiles = make_tiles(img_size=coord_size)
 
         model = HeatmapScout(args.variant)
         if args.init:
@@ -221,7 +315,14 @@ def main() -> int:
                 tile_targets = batch["tile_targets"].to(device)
                 optimizer.zero_grad(set_to_none=True)
                 logits = model(planes)
-                loss, parts = heatmap_scout_loss(logits, heatmap, tile_targets, tiles, pos_weight)
+                loss, parts = heatmap_scout_loss(
+                    logits,
+                    heatmap,
+                    tile_targets,
+                    tiles,
+                    pos_weight,
+                    image_size=coord_size,
+                )
                 loss.backward()
                 optimizer.step()
                 batch_n = int(planes.shape[0])
@@ -230,7 +331,7 @@ def main() -> int:
                     running[key] += value * batch_n
                 samples += batch_n
 
-            val = evaluate(model, val_loader, device, tiles, pos_weight)
+            val = evaluate(model, val_loader, device, tiles, pos_weight, coord_size)
             row = {
                 "epoch": epoch,
                 "train": {key: value / max(samples, 1) for key, value in running.items()},
@@ -250,6 +351,9 @@ def main() -> int:
             "batch": args.batch,
             "workers": args.workers,
             "lr": args.lr,
+            "input_size": args.input_size,
+            "coord_size": coord_size,
+            "heatmap_size": args.input_size // 8,
             "pos_weight": pos_weight_value,
             "train_log": log,
         }
@@ -264,7 +368,10 @@ def main() -> int:
     print("=== train_heatmap_scout.py ===")
     print(f"PASS  checkpoint={args.out}")
     print(f"PASS  log={log_path}")
-    print(f"PASS  variant={args.variant} dataset={dataset_name} pos_weight={pos_weight_value:.2f}")
+    print(
+        f"PASS  variant={args.variant} dataset={dataset_name} "
+        f"input_size={args.input_size} pos_weight={pos_weight_value:.2f}"
+    )
     return 0
 
 
