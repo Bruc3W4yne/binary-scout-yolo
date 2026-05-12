@@ -129,6 +129,8 @@ python scripts\run_yolo_tiles.py --selector learned-heatmap-live --crop-source o
 
 `learned-heatmap` and `learned-heatmap-live` are aliases for the same live route. They run one heatmap scout pass per image, convert the `80x80` logits into scores for the existing 49 tiles, then route the selected original-resolution crops to YOLO.
 
+Latest 100-image Windows result: the learned STE heatmap scout at K=12 reaches `0.289` detector recall and `0.251` small-object recall at `39.7 ms` mean latency. That beats the measured spatial K=12 route (`0.267` / `0.245` at `38.8 ms`) and the 8-filter binary-XNOR K=12 route (`0.258` / `0.244` at `65.5 ms`) on the same benchmark slice. See `docs/learned_heatmap_scout.md`.
+
 Run detector/router smoke checks:
 
 ```powershell

@@ -70,6 +70,44 @@ python scripts\run_yolo_tiles.py --selector learned-heatmap-live --crop-source o
 python scripts\run_yolo_tiles.py --selector learned-heatmap-live --crop-source original --top-k 12 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\heatmap_scout\heatmap_ste.pt
 ```
 
+## Windows RTX 4090 Results
+
+These were run on the first 100 VisDrone val images with `yolov8n.pt`, `--crop-source original`, and one warmup image. The detector is still COCO-pretrained YOLO, so this is a routing/pipeline benchmark rather than final VisDrone mAP.
+
+Selector-only object-center recall on full VisDrone val:
+
+| Selector | K=8 | K=12 |
+|---|---:|---:|
+| Random | 0.461 | 0.612 |
+| Heuristic | 0.447 | 0.600 |
+| Spatial scout | 0.516 | 0.635 |
+| Binary XNOR8 hybrid | 0.531 | 0.641 |
+| Heatmap float e5 | 0.600 | 0.725 |
+| Heatmap STE e10 | 0.523 | 0.666 |
+
+Timed YOLO routing on 100 val images:
+
+| Method | K | Calls | Recall | Small recall | Precision | Mean ms | p95 ms | Scout mean ms |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Full YOLO | - | 1.0 | 0.129 | 0.084 | 0.855 | 13.5 | 20.6 | 0.0 |
+| All tiles | - | 49.0 | 0.399 | 0.355 | 0.531 | 102.7 | 113.0 | 0.0 |
+| Random | 8 | 8.0 | 0.155 | 0.142 | 0.637 | 22.6 | 29.1 | 0.0 |
+| Random | 12 | 12.0 | 0.215 | 0.196 | 0.622 | 29.9 | 35.6 | 0.0 |
+| Spatial live | 8 | 8.0 | 0.228 | 0.210 | 0.646 | 30.7 | 41.7 | 3.0 |
+| Spatial live | 12 | 12.0 | 0.267 | 0.245 | 0.615 | 38.8 | 46.4 | 3.0 |
+| Binary XNOR8 live | 8 | 8.0 | 0.213 | 0.206 | 0.636 | 57.5 | 66.2 | 29.3 |
+| Binary XNOR8 live | 12 | 12.0 | 0.258 | 0.244 | 0.612 | 65.5 | 74.0 | 28.9 |
+| Heatmap float e5 | 8 | 8.0 | 0.250 | 0.227 | 0.650 | 32.7 | 39.2 | 7.8 |
+| Heatmap float e5 | 12 | 12.0 | 0.295 | 0.263 | 0.616 | 39.7 | 44.7 | 7.8 |
+| Heatmap STE e10 | 8 | 8.0 | 0.237 | 0.208 | 0.649 | 32.4 | 38.4 | 8.0 |
+| Heatmap STE e10 | 12 | 12.0 | 0.289 | 0.251 | 0.621 | 39.7 | 45.4 | 8.0 |
+
+The strongest practical result is the learned heatmap route:
+
+- Heatmap float K12 reaches `0.295` recall at `39.7 ms`, versus spatial K12 `0.267` at `38.8 ms`.
+- Heatmap STE K12 reaches `0.289` recall at `39.7 ms`, beating both spatial K12 and binary-XNOR8 K12 recall while using far less scout time than the native CPU XNOR path.
+- Heatmap STE K8 beats spatial detector recall (`0.237` vs `0.228`) but is behind heatmap float and only slightly ahead in small-object recall compared with spatial.
+
 ## Local Smoke Results
 
 These checks were run on the Mac without VisDrone:
@@ -82,13 +120,13 @@ These checks were run on the Mac without VisDrone:
 | selector-only learned heatmap on synthetic JSONL | passed |
 | selector-only random on synthetic JSONL | passed |
 
-Full VisDrone selector recall and YOLO latency still need to be run on the Windows RTX 4090 machine.
+The same verifier suite, pytest, synthetic training, full-split heatmap training, selector-only evaluation, and timed YOLO routing were also run on the Windows RTX 4090 machine.
 
 ## Interpretation
 
 The learned heatmap scout is the most faithful version of the original scout idea in this repo. The current binary-XNOR route proves the native C XNOR-popcount core and live tile routing path; the learned heatmap route tests whether a trained binary-style scout can select better tiles from image content before YOLO runs.
 
-The float model should be treated as an upper-bound sanity check for the learned signal. The STE model is the project-facing binary route. If the STE model improves tile recall or YOLO recall at the same K, it is the best candidate to port deeper into native C/XNOR.
+The float model is the upper-bound sanity check for the learned signal. The STE model is the project-facing binary route. The STE route now has a real result: it improves K12 detector recall over both the spatial scout and the measured 8-filter binary-XNOR live route while keeping latency close to spatial. That is the strongest evidence that the original learned binary-scout idea is worth presenting.
 
 ## Native C/XNOR Next Step
 
