@@ -72,7 +72,7 @@ python scripts\run_yolo_tiles.py --selector learned-heatmap-live --crop-source o
 
 ## Windows RTX 4090 Results
 
-These were run on the first 100 VisDrone val images with `yolov8n.pt`, `--crop-source original`, and one warmup image. The detector is still COCO-pretrained YOLO, so this is a routing/pipeline benchmark rather than final VisDrone mAP.
+These were run on the first 100 VisDrone val images with `yolov8n.pt`, `--crop-source original`, and one warmup image on an NVIDIA RTX 4090. The detector is still COCO-pretrained YOLO, so this is a routing/pipeline benchmark rather than final VisDrone mAP. The benchmark code was `f716cba`; the latest code also records `git_commit` and `device_name` in new result JSON files.
 
 Selector-only object-center recall on full VisDrone val:
 
@@ -101,6 +101,23 @@ Timed YOLO routing on 100 val images:
 | Heatmap float e5 | 12 | 12.0 | 0.295 | 0.263 | 0.616 | 39.7 | 44.7 | 7.8 |
 | Heatmap STE e10 | 8 | 8.0 | 0.237 | 0.208 | 0.649 | 32.4 | 38.4 | 8.0 |
 | Heatmap STE e10 | 12 | 12.0 | 0.289 | 0.251 | 0.621 | 39.7 | 45.4 | 8.0 |
+
+Phase timing from the same JSON outputs:
+
+| Method | K | YOLO mean ms | Merge mean ms | Total p50 ms | Total p95 ms |
+|---|---:|---:|---:|---:|---:|
+| Full YOLO | - | 5.5 | 0.0 | 12.7 | 20.6 |
+| All tiles | - | 89.4 | 4.6 | 102.6 | 113.0 |
+| Random | 8 | 13.6 | 0.7 | 21.2 | 29.1 |
+| Random | 12 | 20.3 | 1.1 | 29.4 | 35.6 |
+| Spatial live | 8 | 16.4 | 1.4 | 29.4 | 41.7 |
+| Spatial live | 12 | 23.8 | 2.0 | 37.9 | 46.4 |
+| Binary XNOR8 live | 8 | 16.8 | 1.4 | 56.8 | 66.2 |
+| Binary XNOR8 live | 12 | 24.8 | 2.0 | 65.2 | 74.0 |
+| Heatmap float e5 | 8 | 15.0 | 1.4 | 32.2 | 39.2 |
+| Heatmap float e5 | 12 | 21.5 | 2.0 | 39.0 | 44.7 |
+| Heatmap STE e10 | 8 | 14.6 | 1.3 | 32.0 | 38.4 |
+| Heatmap STE e10 | 12 | 21.4 | 1.9 | 39.2 | 45.4 |
 
 The strongest practical result is the learned heatmap route:
 
