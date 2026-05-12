@@ -5,6 +5,7 @@ Verify selector and routing contracts without VisDrone or YOLO.
 from __future__ import annotations
 
 import sys
+from argparse import Namespace
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from evaluate_scout_recall import evaluate_topk, feature_artifact_name  # noqa: E402
+from run_yolo_tiles import is_heatmap_selector, is_live_scout_selector, select_tile_records  # noqa: E402
 from routing import (  # noqa: E402
     feature_groups,
     heuristic_scores,
@@ -106,6 +108,27 @@ def verify_feature_artifact_name() -> None:
     expect(feature_artifact_name({}, "oracle-greedy") == "oracle_greedy", "fallback artifact name mismatch")
 
 
+def verify_learned_heatmap_selector_aliases() -> None:
+    expect(is_live_scout_selector("learned-heatmap"), "learned-heatmap should be a live scout selector")
+    expect(is_live_scout_selector("learned-heatmap-live"), "learned-heatmap-live should be a live scout selector")
+    expect(is_heatmap_selector("learned-heatmap-live"), "heatmap selector alias should be recognized")
+
+    records = [
+        {"stem": "image_a", "tile_id": 0},
+        {"stem": "image_a", "tile_id": 1},
+        {"stem": "image_a", "tile_id": 2},
+    ]
+    scores = {("image_a", 0): 0.1, ("image_a", 1): 0.9, ("image_a", 2): 0.8}
+    selected = select_tile_records(
+        "image_a",
+        records,
+        Namespace(selector="learned-heatmap-live", top_k=2),
+        rng=None,
+        scout_scores=scores,
+    )
+    expect([record["tile_id"] for record in selected] == [1, 2], "learned heatmap selector should use scout scores")
+
+
 def main() -> int:
     checks = [
         ("feature_grouping_and_boxes", verify_feature_grouping_and_boxes),
@@ -114,6 +137,7 @@ def main() -> int:
         ("recall_evaluation", verify_recall_evaluation),
         ("selected_area", verify_selected_area),
         ("feature_artifact_name", verify_feature_artifact_name),
+        ("learned_heatmap_selector_aliases", verify_learned_heatmap_selector_aliases),
     ]
     print("=== verify_routing.py ===")
     try:

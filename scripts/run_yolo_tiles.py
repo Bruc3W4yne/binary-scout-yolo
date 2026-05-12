@@ -31,6 +31,10 @@ from detector import (  # noqa: E402
     project_detection_from_original_crop,
     tile_to_original_crop,
 )
+from heatmap_scout import (  # noqa: E402
+    live_heatmap_scores,
+    load_live_checkpoint as load_heatmap_checkpoint,
+)
 from preprocess import (  # noqa: E402
     Tile,
     parse_visdrone_annotations,
@@ -62,6 +66,9 @@ LIVE_SCOUT_PHASES = [
     "threshold",
     "tile_summary",
     "spatial",
+    "heatmap_preprocess",
+    "heatmap_model",
+    "heatmap_tile_score",
     "mlp",
     "topk",
     "total",
@@ -108,8 +115,18 @@ def yolo_device_arg(device: str):
     return 0 if device == "cuda" else "cpu"
 
 
+def torch_device_arg(device: str) -> torch.device:
+    if device == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.device(device)
+
+
 def is_live_scout_selector(selector: str) -> bool:
-    return selector in {"scout-live", "binary-xnor-live"}
+    return selector in {"scout-live", "binary-xnor-live", "learned-heatmap", "learned-heatmap-live"}
+
+
+def is_heatmap_selector(selector: str) -> bool:
+    return selector in {"learned-heatmap", "learned-heatmap-live"}
 
 
 def sync_cuda(device) -> None:
@@ -423,9 +440,19 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
         area_fraction = 1.0
     else:
         if is_live_scout_selector(args.selector):
-            scout_scores, live_scout_timing, scout_route = live_scout_scores(rgb, records, args.scout_checkpoint)
+            if is_heatmap_selector(args.selector):
+                scout_scores, live_scout_timing, scout_route = live_heatmap_scores(
+                    rgb,
+                    records,
+                    args.scout_checkpoint,
+                    device=args.scout_device,
+                )
+            else:
+                scout_scores, live_scout_timing, scout_route = live_scout_scores(rgb, records, args.scout_checkpoint)
             if args.selector == "binary-xnor-live" and not str(scout_route).startswith("binary-xnor"):
                 raise ValueError("--selector binary-xnor-live requires a binary-xnor checkpoint")
+            if is_heatmap_selector(args.selector) and not str(scout_route).startswith("learned-heatmap"):
+                raise ValueError(f"--selector {args.selector} requires a learned heatmap checkpoint")
             live_scout_timing["scout_resize_ms"] = resize_preprocess_ms
         tile_scores = None
         if args.selector == "heuristic":
@@ -603,6 +630,8 @@ def parse_args() -> argparse.Namespace:
             "scout",
             "scout-live",
             "binary-xnor-live",
+            "learned-heatmap",
+            "learned-heatmap-live",
         ],
         default="full",
     )
@@ -653,7 +682,12 @@ def main() -> int:
         if is_live_scout_selector(args.selector):
             if args.checkpoint is None:
                 raise ValueError(f"--selector {args.selector} requires --checkpoint")
-            args.scout_checkpoint = load_scout_checkpoint(args.checkpoint)
+            args.scout_device = torch_device_arg(args.device)
+            args.scout_checkpoint = (
+                load_heatmap_checkpoint(args.checkpoint, args.scout_device)
+                if is_heatmap_selector(args.selector)
+                else load_scout_checkpoint(args.checkpoint)
+            )
         if args.selector == "prior":
             args.prior_scores = prior_from_records(read_jsonl(args.tile_dir / f"{args.prior_split}_tiles.jsonl"))
 
@@ -690,7 +724,11 @@ def main() -> int:
                 "warmup_images": args.warmup_images,
                 "features": str(args.features) if args.features else None,
                 "checkpoint": str(args.checkpoint) if args.checkpoint else None,
-                "scout_route": str(args.scout_checkpoint.get("feature_mode")) if is_live_scout_selector(args.selector) else None,
+                "scout_route": (
+                    str(args.scout_checkpoint.get("route", args.scout_checkpoint.get("feature_mode")))
+                    if is_live_scout_selector(args.selector)
+                    else None
+                ),
                 "command": "python " + " ".join(sys.argv),
             },
             "summary": summarize(rows, args),

@@ -8,9 +8,9 @@ The pipeline goal is:
 UAV image -> binary/XNOR scout tile scores -> top-K tiles -> YOLO on selected crops -> merged detections
 ```
 
-The current repo implements the verified binary core, VisDrone tile dataset generation, C-free and binary-XNOR scout features, scout recall evaluation, and YOLO selected-tile routing. Tiled detector runs can now use `--crop-source original` so the scout selects on the 640x640 grid while YOLO runs on original-resolution crops.
+The current repo implements the verified binary core, VisDrone tile dataset generation, C-free and binary-XNOR scout features, a learned heatmap scout, scout recall evaluation, and YOLO selected-tile routing. Tiled detector runs can now use `--crop-source original` so the scout selects on the 640x640 grid while YOLO runs on original-resolution crops.
 
-See `docs/final_binary_pass_results.md` for the latest Windows RTX 4090 binary-live results. See `docs/current_results.md` for historical smoke results and caveats, `docs/final_project_claims.md` for the defensible novelty/claim framing, `docs/evaluation_protocol.md` for longer benchmark commands, `docs/binary_xnor_core.md` for the native binary core, and `docs/completion_audit.md` for the current phase-gate handoff.
+See `docs/final_binary_pass_results.md` for the latest Windows RTX 4090 binary-live results, `docs/learned_heatmap_scout.md` for the learned binary heatmap route, `docs/current_results.md` for historical smoke results and caveats, `docs/final_project_claims.md` for the defensible novelty/claim framing, `docs/evaluation_protocol.md` for longer benchmark commands, `docs/binary_xnor_core.md` for the native binary core, and `docs/completion_audit.md` for the current phase-gate handoff.
 
 ## Windows Quickstart
 
@@ -23,6 +23,7 @@ python scripts\verify_packed_kernel.py --include-nonbinary
 python scripts\verify_tile_contracts.py
 python scripts\verify_detector_utils.py
 python scripts\verify_routing.py
+python scripts\verify_heatmap_scout.py
 python -m pytest -q
 ```
 
@@ -106,6 +107,27 @@ python scripts\add_spatial_features.py --features data\tile_features\binary_xnor
 python scripts\train_scout.py --train-features data\tile_features\binary_xnor8_hybrid_train.npz --val-features data\tile_features\binary_xnor8_hybrid_val.npz --out-dir runs\scout_binary_xnor8_hybrid_mlp --hidden-dim 64 --epochs 30 --count-alpha 0.2 --device cuda
 python scripts\run_yolo_tiles.py --selector binary-xnor-live --crop-source original --top-k 8 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\scout_binary_xnor8_hybrid_mlp\scout_binary_xnor_hybrid.pt
 ```
+
+Train and evaluate the learned heatmap scout. The float variant is a sanity upper bound for the learned routing signal; the STE variant is the binary scout route.
+
+```powershell
+python scripts\verify_heatmap_scout.py
+python scripts\train_heatmap_scout.py --variant float --train-root data\VisDrone2019-DET-train --val-root data\VisDrone2019-DET-val --epochs 20 --batch 8 --device cuda --out runs\heatmap_scout\heatmap_float.pt
+python scripts\train_heatmap_scout.py --variant ste --init runs\heatmap_scout\heatmap_float.pt --train-root data\VisDrone2019-DET-train --val-root data\VisDrone2019-DET-val --epochs 20 --batch 8 --device cuda --out runs\heatmap_scout\heatmap_ste.pt
+python scripts\evaluate_heatmap_scout_recall.py --checkpoint runs\heatmap_scout\heatmap_float.pt --mode learned-heatmap --top-k-values 8 12 --device cuda
+python scripts\evaluate_heatmap_scout_recall.py --checkpoint runs\heatmap_scout\heatmap_ste.pt --mode learned-heatmap --top-k-values 8 12 --device cuda --out data\results_heatmap_scout_recall_learned_heatmap_ste.json
+python scripts\evaluate_heatmap_scout_recall.py --mode random --random-trials 5 --top-k-values 8 12
+python scripts\evaluate_heatmap_scout_recall.py --mode heuristic --top-k-values 8 12
+```
+
+Run the learned scout in the timed YOLO crop router:
+
+```powershell
+python scripts\run_yolo_tiles.py --selector learned-heatmap-live --crop-source original --top-k 8 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\heatmap_scout\heatmap_ste.pt
+python scripts\run_yolo_tiles.py --selector learned-heatmap-live --crop-source original --top-k 12 --split val --max-images 100 --device cuda --weights yolov8n.pt --checkpoint runs\heatmap_scout\heatmap_ste.pt
+```
+
+`learned-heatmap` and `learned-heatmap-live` are aliases for the same live route. They run one heatmap scout pass per image, convert the `80x80` logits into scores for the existing 49 tiles, then route the selected original-resolution crops to YOLO.
 
 Run detector/router smoke checks:
 

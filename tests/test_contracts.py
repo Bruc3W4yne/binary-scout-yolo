@@ -48,6 +48,19 @@ def test_routing_contracts() -> None:
     checks.verify_oracle_greedy()
     checks.verify_recall_evaluation()
     checks.verify_selected_area()
+    checks.verify_learned_heatmap_selector_aliases()
+
+
+def test_heatmap_scout_contracts() -> None:
+    checks = load_script("verify_heatmap_scout")
+
+    checks.verify_msb_planes()
+    checks.verify_target_rasterization()
+    checks.verify_tile_targets()
+    checks.verify_model_shape_and_backprop()
+    checks.verify_tile_scoring_and_topk()
+    checks.verify_checkpoint_and_export()
+    checks.verify_live_scores()
 
 
 def test_tile_grid_contract() -> None:
