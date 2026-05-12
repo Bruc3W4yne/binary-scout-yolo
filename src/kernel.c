@@ -27,6 +27,18 @@
 #  define KERNEL_EXPORT
 #endif
 
+KERNEL_EXPORT int set_omp_threads(int n)
+{
+#ifdef _OPENMP
+    if (n < 1) return -1;
+    omp_set_num_threads(n);
+    return omp_get_max_threads();
+#else
+    (void)n;
+    return 1;
+#endif
+}
+
 /* --------------------------------------------------------------------------
  * xnor_popcount_conv
  *

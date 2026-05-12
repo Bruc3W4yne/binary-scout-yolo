@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,6 +53,8 @@ class NativeXnorHeatmapScout:
     def __init__(self, model: HeatmapScout):
         if model.variant != "ste":
             raise ValueError("native XNOR heatmap scout requires a STE checkpoint")
+        default_threads = min(16, os.cpu_count() or 1)
+        self.omp_threads = kw.set_omp_threads(int(os.environ.get("XNOR_SCOUT_THREADS", default_threads)))
         model = model.cpu().eval()
         self.blocks = [_build_block(block) for block in model.blocks]
         self.head_weight = model.head.weight.detach().cpu().numpy()[0, :, 0, 0].astype(np.float32)

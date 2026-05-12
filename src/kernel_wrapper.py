@@ -119,6 +119,9 @@ def _load():
                 ) from exc
             raise
 
+        _lib.set_omp_threads.restype = ctypes.c_int
+        _lib.set_omp_threads.argtypes = [ctypes.c_int]
+
         # int xnor_popcount_conv(uint8*, int8*, int32*, int, int, int, int)
         _lib.xnor_popcount_conv.restype = ctypes.c_int
         _lib.xnor_popcount_conv.argtypes = [
@@ -231,6 +234,15 @@ def _load():
             ctypes.c_int,
         ]
     return _lib
+
+
+def set_omp_threads(n_threads: int) -> int:
+    lib = _load()
+    n_threads = _require_int("n_threads", n_threads)
+    result = int(lib.set_omp_threads(ctypes.c_int(n_threads)))
+    if result < 1:
+        raise ValueError(f"set_omp_threads returned {result}")
+    return result
 
 
 def xnor_popcount_conv(
