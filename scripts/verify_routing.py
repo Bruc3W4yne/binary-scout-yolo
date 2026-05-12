@@ -22,9 +22,12 @@ from routing import (  # noqa: E402
     prior_by_tile,
     prior_scores,
     random_scores,
+    select_records_by_heatmap_coverage,
+    select_records_by_scores,
     select_oracle_greedy_indices,
     select_records_oracle_greedy,
     selected_area_for_tile_ids,
+    tile_iou,
     tile_box_indices,
 )
 
@@ -102,6 +105,57 @@ def verify_selected_area() -> None:
     expect(0.09 < area < 0.10, f"unexpected selected area fraction: {area}")
 
 
+def verify_diverse_score_selection() -> None:
+    records = [
+        {"tile_id": 0, "tile": [0, 0, 10, 10]},
+        {"tile_id": 1, "tile": [5, 0, 15, 10]},
+        {"tile_id": 2, "tile": [30, 0, 40, 10]},
+    ]
+    scores = {0: 0.9, 1: 0.8, 2: 0.7}
+    topk = select_records_by_scores(records, scores, 2)
+    expect([row["tile_id"] for row in topk] == [0, 1], "topk compatibility drifted")
+    expect(tile_iou(records[0], records[1]) > 0.3, "fixture should have overlapping tiles")
+
+    nms = select_records_by_scores(records, scores, 2, policy="tile-nms", tile_nms_iou=0.3)
+    expect([row["tile_id"] for row in nms] == [0, 2], f"tile-nms should skip overlapping tile: {nms}")
+
+    mmr = select_records_by_scores(records, scores, 2, policy="mmr", mmr_lambda=0.3)
+    expect([row["tile_id"] for row in mmr] == [0, 2], f"MMR should trade score for coverage: {mmr}")
+
+    adaptive = select_records_by_scores(
+        records,
+        scores,
+        3,
+        policy="adaptive-mmr",
+        min_k=2,
+        max_k=3,
+        score_threshold=0.8,
+    )
+    expect(len(adaptive) == 2, f"adaptive MMR should honor min_k then stop: {adaptive}")
+
+
+def verify_heatmap_coverage_selection() -> None:
+    records = [
+        {"tile_id": 0, "img_size": 640, "tile": [0, 0, 160, 160]},
+        {"tile_id": 1, "img_size": 640, "tile": [480, 480, 640, 640]},
+    ]
+    heatmap = np.zeros((1, 1, 80, 80), dtype=np.float32)
+    heatmap[:, :, 70:, 70:] = 5.0
+    selected = select_records_by_heatmap_coverage(records, heatmap, 1)
+    expect([row["tile_id"] for row in selected] == [1], f"heatmap coverage should follow heatmap mass: {selected}")
+
+    adaptive = select_records_by_heatmap_coverage(
+        records,
+        heatmap,
+        2,
+        policy="adaptive-heatmap-coverage",
+        min_k=1,
+        max_k=2,
+        mass_threshold=0.8,
+    )
+    expect([row["tile_id"] for row in adaptive] == [1], "adaptive heatmap coverage should stop after enough mass")
+
+
 def verify_feature_artifact_name() -> None:
     data = {"metadata_json": np.asarray('{"feature_mode": "binary-xnor"}')}
     expect(feature_artifact_name(data, "scout") == "binary_xnor", "feature artifact name should use metadata")
@@ -140,6 +194,8 @@ def main() -> int:
         ("oracle_greedy", verify_oracle_greedy),
         ("recall_evaluation", verify_recall_evaluation),
         ("selected_area", verify_selected_area),
+        ("diverse_score_selection", verify_diverse_score_selection),
+        ("heatmap_coverage_selection", verify_heatmap_coverage_selection),
         ("feature_artifact_name", verify_feature_artifact_name),
         ("learned_heatmap_selector_aliases", verify_learned_heatmap_selector_aliases),
     ]

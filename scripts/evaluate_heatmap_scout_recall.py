@@ -22,18 +22,20 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from heatmap_scout import live_heatmap_scores, load_live_checkpoint  # noqa: E402
+from heatmap_scout import live_heatmap_outputs, load_live_checkpoint  # noqa: E402
 from preprocess import selected_area_fraction  # noqa: E402
 from routing import (  # noqa: E402
     heuristic_scores,
     prior_from_records,
+    select_records_by_heatmap_coverage,
     select_records_by_scores,
     select_records_oracle_greedy,
 )
 from scout import bitplane_stats_features  # noqa: E402
-from xnor_heatmap_scout import LITE_SCOUT_IMAGE_SIZE, live_xnor_heatmap_scores, load_xnor_live_checkpoint  # noqa: E402
+from xnor_heatmap_scout import LITE_SCOUT_IMAGE_SIZE, live_xnor_heatmap_outputs, load_xnor_live_checkpoint  # noqa: E402
 
 XNOR_HEATMAP_MODES = {"xnor-heatmap-live", "xnor-heatmap-320-live", "learned-xnor-heatmap-live"}
+HEATMAP_POLICIES = {"heatmap-coverage", "adaptive-heatmap-coverage"}
 
 
 def xnor_scout_image_size(mode: str) -> int:
@@ -121,15 +123,15 @@ def learned_scores(
     checkpoint: dict,
     device: torch.device,
     xnor: bool = False,
-) -> tuple[dict[int, float], dict[str, float], str]:
+) -> tuple[dict[int, float], np.ndarray, dict[str, float], str]:
     if xnor:
-        scores, timing, route = live_xnor_heatmap_scores(rgb, records, checkpoint)
+        scores, heatmap, timing, route = live_xnor_heatmap_outputs(rgb, records, checkpoint)
     else:
-        scores, timing, route = live_heatmap_scores(rgb, records, checkpoint, device=device)
+        scores, heatmap, timing, route = live_heatmap_outputs(rgb, records, checkpoint, device=device)
     stem = records[0]["stem"]
     by_tile = {tile_id: score for (score_stem, tile_id), score in scores.items() if score_stem == stem}
     timing["scout_total_ms"] = sum(float(value) for value in timing.values())
-    return by_tile, timing, route
+    return by_tile, heatmap, timing, route
 
 
 def heuristic_tile_scores(rgb: np.ndarray, records: list[dict]) -> tuple[dict[int, float], dict[str, float], str]:
@@ -147,6 +149,8 @@ def select_records(
     top_k: int,
     scores: dict[int, float] | None,
     rng: random.Random,
+    args: argparse.Namespace,
+    heatmap: np.ndarray | None = None,
 ) -> list[dict]:
     records = sorted(records, key=lambda item: int(item["tile_id"]))
     if mode == "random":
@@ -158,9 +162,32 @@ def select_records(
     if mode == "oracle-count":
         ranked = sorted(records, key=lambda item: (-int(item["n_objects"]), -int(item["label"]), int(item["tile_id"])))
         return sorted(ranked[:top_k], key=lambda item: int(item["tile_id"]))
+    if args.selection_policy in HEATMAP_POLICIES:
+        if heatmap is None:
+            raise ValueError(f"--selection-policy {args.selection_policy} requires a heatmap mode")
+        return select_records_by_heatmap_coverage(
+            records,
+            heatmap,
+            top_k,
+            policy=args.selection_policy,
+            min_k=args.min_k,
+            max_k=args.max_k or None,
+            mass_threshold=args.mass_threshold,
+            score_threshold=args.score_threshold,
+        )
     if scores is None:
         raise ValueError(f"mode={mode} requires scores")
-    return select_records_by_scores(records, scores, top_k)
+    return select_records_by_scores(
+        records,
+        scores,
+        top_k,
+        policy=args.selection_policy,
+        min_k=args.min_k,
+        max_k=args.max_k or None,
+        tile_nms_iou=args.tile_nms_iou,
+        mmr_lambda=args.mmr_lambda,
+        score_threshold=args.score_threshold,
+    )
 
 
 def evaluate_groups(
@@ -192,13 +219,14 @@ def evaluate_groups(
             continue
 
         scores = None
+        heatmap = None
         rgb = None
         if args.mode in {"learned-heatmap", "learned-heatmap-live", "heuristic", *XNOR_HEATMAP_MODES}:
             rgb = load_resized_rgb(records[0])
         if args.mode in {"learned-heatmap", "learned-heatmap-live", *XNOR_HEATMAP_MODES}:
             if checkpoint is None:
                 raise ValueError("--mode learned-heatmap requires --checkpoint")
-            scores, timing, route = learned_scores(
+            scores, heatmap, timing, route = learned_scores(
                 rgb,
                 records,
                 checkpoint,
@@ -218,7 +246,7 @@ def evaluate_groups(
         positive_n = sum(1 for record in records if record_box_indices(record))
 
         for top_k in args.top_k_values:
-            selected = select_records(records, args.mode, top_k, scores, rng)
+            selected = select_records(records, args.mode, top_k, scores, rng, args, heatmap)
             covered = set()
             selected_positive = 0
             selected_tiles = []
@@ -289,6 +317,24 @@ def parse_args() -> argparse.Namespace:
         default="learned-heatmap",
     )
     parser.add_argument("--top-k-values", type=int, nargs="+", default=[8, 12])
+    parser.add_argument(
+        "--selection-policy",
+        choices=[
+            "topk",
+            "tile-nms",
+            "mmr",
+            "heatmap-coverage",
+            "adaptive-mmr",
+            "adaptive-heatmap-coverage",
+        ],
+        default="topk",
+    )
+    parser.add_argument("--min-k", type=int, default=1)
+    parser.add_argument("--max-k", type=int, default=0, help="0 means use each top-k value")
+    parser.add_argument("--tile-nms-iou", type=float, default=0.3)
+    parser.add_argument("--mmr-lambda", type=float, default=0.75)
+    parser.add_argument("--score-threshold", type=float, default=None)
+    parser.add_argument("--mass-threshold", type=float, default=None)
     parser.add_argument("--max-images", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--random-trials", "--trials", dest="random_trials", type=int, default=1)
@@ -304,6 +350,13 @@ def main() -> int:
             raise ValueError("--random-trials must be positive")
         if any(top_k < 1 for top_k in args.top_k_values):
             raise ValueError("--top-k-values must be positive")
+        if args.min_k < 1:
+            raise ValueError("--min-k must be positive")
+        if args.max_k < 0:
+            raise ValueError("--max-k must be nonnegative")
+        heatmap_modes = {"learned-heatmap", "learned-heatmap-live", *XNOR_HEATMAP_MODES}
+        if args.selection_policy in HEATMAP_POLICIES and args.mode not in heatmap_modes:
+            raise ValueError(f"--selection-policy {args.selection_policy} requires a heatmap mode")
 
         records = read_jsonl(args.tile_jsonl)
         groups = grouped_by_stem(records, args.max_images)
@@ -344,6 +397,13 @@ def main() -> int:
             "seed": args.seed,
             "random_trials": n_trials,
             "max_images": args.max_images,
+            "selection_policy": args.selection_policy,
+            "min_k": args.min_k,
+            "max_k": args.max_k,
+            "tile_nms_iou": args.tile_nms_iou,
+            "mmr_lambda": args.mmr_lambda,
+            "score_threshold": args.score_threshold,
+            "mass_threshold": args.mass_threshold,
             "top_k": aggregate_trials(trial_results),
             "timing_ms": summarize_ms(all_timings),
         }
@@ -351,7 +411,8 @@ def main() -> int:
         out = args.out
         if out is None:
             suffix = f"_n{args.max_images}" if args.max_images else ""
-            out = ROOT / "data" / f"results_heatmap_scout_recall_{args.mode.replace('-', '_')}{suffix}.json"
+            policy = "" if args.selection_policy == "topk" else f"_{args.selection_policy}"
+            out = ROOT / "data" / f"results_heatmap_scout_recall_{args.mode.replace('-', '_')}{policy}{suffix}.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(results, indent=2) + "\n")
 

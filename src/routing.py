@@ -5,6 +5,7 @@ Tile routing helpers shared by recall evaluation and YOLO routing.
 from __future__ import annotations
 
 import json
+import math
 from collections import OrderedDict
 from typing import Iterable
 
@@ -131,6 +132,78 @@ def record_box_indices(record: dict) -> list[int]:
     return [int(value) for value in record.get("box_indices", [])]
 
 
+def record_tile_xyxy(record: dict) -> tuple[float, float, float, float]:
+    x1, y1, x2, y2 = record["tile"]
+    return float(x1), float(y1), float(x2), float(y2)
+
+
+def tile_iou(a: dict, b: dict) -> float:
+    ax1, ay1, ax2, ay2 = record_tile_xyxy(a)
+    bx1, by1, bx2, by2 = record_tile_xyxy(b)
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    if inter <= 0.0:
+        return 0.0
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    return inter / max(area_a + area_b - inter, 1e-12)
+
+
+def pairwise_overlap_stats(records: list[dict]) -> dict[str, float]:
+    overlaps = [
+        tile_iou(left, right)
+        for idx, left in enumerate(records)
+        for right in records[idx + 1 :]
+    ]
+    if not overlaps:
+        return {
+            "selected_pair_count": 0,
+            "selected_iou_mean": 0.0,
+            "selected_iou_max": 0.0,
+            "selected_iou_over_0_1": 0,
+            "selected_iou_over_0_3": 0,
+        }
+    return {
+        "selected_pair_count": len(overlaps),
+        "selected_iou_mean": float(np.mean(overlaps)),
+        "selected_iou_max": float(np.max(overlaps)),
+        "selected_iou_over_0_1": int(sum(value > 0.1 for value in overlaps)),
+        "selected_iou_over_0_3": int(sum(value > 0.3 for value in overlaps)),
+    }
+
+
+def coverage_stats(records: list[dict], selected: list[dict]) -> dict[str, float]:
+    all_boxes: set[int] = set()
+    for record in records:
+        all_boxes.update(record_box_indices(record))
+    if not all_boxes and records:
+        all_boxes = set(range(max(int(record.get("n_boxes", 0)) for record in records)))
+
+    covered: set[int] = set()
+    duplicate_coverage = 0
+    selected_positive = 0
+    for record in selected:
+        boxes = set(record_box_indices(record))
+        selected_positive += int(bool(boxes))
+        duplicate_coverage += len(boxes & covered)
+        covered.update(boxes)
+
+    positive_total = sum(1 for record in records if record_box_indices(record))
+    object_total = len(all_boxes)
+    return {
+        "gt_object_coverage": len(covered) / object_total if object_total else 0.0,
+        "gt_objects_covered": len(covered),
+        "gt_objects_total": object_total,
+        "positive_tile_recall": selected_positive / positive_total if positive_total else 0.0,
+        "positive_tiles_selected": selected_positive,
+        "positive_tiles_total": positive_total,
+        "duplicate_coverage_count": duplicate_coverage,
+    }
+
+
 def prior_from_records(records: Iterable[dict]) -> dict[int, float]:
     tile_ids = []
     labels = []
@@ -140,11 +213,163 @@ def prior_from_records(records: Iterable[dict]) -> dict[int, float]:
     return prior_by_tile(np.asarray(tile_ids, dtype=np.int32), np.asarray(labels, dtype=np.uint8))
 
 
-def select_records_by_scores(records: list[dict], scores: dict[int, float], top_k: int) -> list[dict]:
+def _score(records_scores: dict[int, float], record: dict) -> float:
+    return float(records_scores.get(int(record["tile_id"]), 0.0))
+
+
+def _rank_records(records: list[dict], scores: dict[int, float]) -> list[dict]:
+    return sorted(records, key=lambda item: (-_score(scores, item), int(item["tile_id"])))
+
+
+def _normalized_scores(records: list[dict], scores: dict[int, float]) -> dict[int, float]:
+    values = np.asarray([_score(scores, record) for record in records], dtype=np.float32)
+    lo = float(values.min()) if len(values) else 0.0
+    hi = float(values.max()) if len(values) else 0.0
+    denom = max(hi - lo, 1e-6)
+    return {int(record["tile_id"]): (_score(scores, record) - lo) / denom for record in records}
+
+
+def _fill_to_limit(selected: list[dict], ranked: list[dict], limit: int) -> list[dict]:
+    seen = {int(record["tile_id"]) for record in selected}
+    for record in ranked:
+        if len(selected) >= limit:
+            break
+        if int(record["tile_id"]) not in seen:
+            selected.append(record)
+            seen.add(int(record["tile_id"]))
+    return selected
+
+
+def select_records_by_scores(
+    records: list[dict],
+    scores: dict[int, float],
+    top_k: int,
+    policy: str = "topk",
+    min_k: int = 1,
+    max_k: int | None = None,
+    tile_nms_iou: float = 0.3,
+    mmr_lambda: float = 0.75,
+    score_threshold: float | None = None,
+) -> list[dict]:
     if top_k < 1:
         raise ValueError("top_k must be positive")
-    ranked = sorted(records, key=lambda item: (-scores.get(int(item["tile_id"]), 0.0), int(item["tile_id"])))
-    return sorted(ranked[: min(top_k, len(ranked))], key=lambda item: int(item["tile_id"]))
+    records = sorted(records, key=lambda item: int(item["tile_id"]))
+    ranked = _rank_records(records, scores)
+    limit = min(max_k or top_k, len(ranked))
+    min_k = min(max(int(min_k), 1), limit)
+
+    if policy == "topk":
+        return sorted(ranked[: min(top_k, len(ranked))], key=lambda item: int(item["tile_id"]))
+
+    if policy == "tile-nms":
+        selected: list[dict] = []
+        for record in ranked:
+            if len(selected) >= limit:
+                break
+            if all(tile_iou(record, kept) <= tile_nms_iou for kept in selected):
+                selected.append(record)
+        selected = _fill_to_limit(selected, ranked, limit)
+        return sorted(selected, key=lambda item: int(item["tile_id"]))
+
+    if policy not in {"mmr", "adaptive-mmr"}:
+        raise ValueError(f"unsupported score selection policy: {policy}")
+
+    norm = _normalized_scores(records, scores)
+    remaining = ranked[:]
+    selected = []
+    while remaining and len(selected) < limit:
+        def key(record: dict) -> tuple[float, int]:
+            tile_id = int(record["tile_id"])
+            overlap = max((tile_iou(record, kept) for kept in selected), default=0.0)
+            value = mmr_lambda * norm[tile_id] - (1.0 - mmr_lambda) * overlap
+            return value, -tile_id
+
+        best = max(remaining, key=key)
+        if policy == "adaptive-mmr" and len(selected) >= min_k and score_threshold is not None:
+            if norm[int(best["tile_id"])] < score_threshold:
+                break
+        selected.append(best)
+        remaining.remove(best)
+
+    selected = _fill_to_limit(selected, ranked, min_k) if len(selected) < min_k else selected
+    return sorted(selected, key=lambda item: int(item["tile_id"]))
+
+
+def _tile_slice(record: dict, heatmap_shape: tuple[int, int]) -> tuple[slice, slice]:
+    height, width = heatmap_shape
+    x1, y1, x2, y2 = record_tile_xyxy(record)
+    image_size = float(record.get("img_size", 640))
+    sx = width / image_size
+    sy = height / image_size
+    left = max(0, min(width - 1, int(math.floor(x1 * sx))))
+    top = max(0, min(height - 1, int(math.floor(y1 * sy))))
+    right = max(left + 1, min(width, int(math.ceil(x2 * sx))))
+    bottom = max(top + 1, min(height, int(math.ceil(y2 * sy))))
+    return slice(top, bottom), slice(left, right)
+
+
+def _positive_heatmap_mass(heatmap: np.ndarray) -> np.ndarray:
+    values = np.asarray(heatmap, dtype=np.float32).squeeze()
+    if values.ndim != 2:
+        raise ValueError(f"heatmap must be 2D after squeeze, got {values.shape}")
+    mass = np.maximum(values, 0.0)
+    if float(mass.sum()) > 0.0:
+        return mass
+    shifted = 1.0 / (1.0 + np.exp(-np.clip(values, -30.0, 30.0)))
+    shifted -= float(shifted.min())
+    return shifted
+
+
+def select_records_by_heatmap_coverage(
+    records: list[dict],
+    heatmap: np.ndarray,
+    top_k: int,
+    policy: str = "heatmap-coverage",
+    min_k: int = 1,
+    max_k: int | None = None,
+    mass_threshold: float | None = None,
+    score_threshold: float | None = None,
+) -> list[dict]:
+    if top_k < 1:
+        raise ValueError("top_k must be positive")
+    if policy not in {"heatmap-coverage", "adaptive-heatmap-coverage"}:
+        raise ValueError(f"unsupported heatmap selection policy: {policy}")
+
+    records = sorted(records, key=lambda item: int(item["tile_id"]))
+    limit = min(max_k or top_k, len(records))
+    min_k = min(max(int(min_k), 1), limit)
+    mass = _positive_heatmap_mass(heatmap)
+    total_mass = float(mass.sum())
+    if total_mass <= 0.0:
+        return records[:min_k if policy.startswith("adaptive") else limit]
+
+    covered = np.zeros(mass.shape, dtype=bool)
+    remaining = records[:]
+    selected: list[dict] = []
+    initial_best = None
+
+    while remaining and len(selected) < limit:
+        scored = []
+        for record in remaining:
+            ys, xs = _tile_slice(record, mass.shape)
+            gain = float(mass[ys, xs][~covered[ys, xs]].sum())
+            total = float(mass[ys, xs].sum())
+            scored.append((gain, total, -int(record["tile_id"]), record, ys, xs))
+        gain, total, _, record, ys, xs = max(scored, key=lambda item: (item[0], item[1], item[2]))
+        if initial_best is None:
+            initial_best = max(gain, 1e-6)
+        if policy == "adaptive-heatmap-coverage" and len(selected) >= min_k:
+            covered_mass = float(mass[covered].sum())
+            if mass_threshold is not None and covered_mass / total_mass >= mass_threshold:
+                break
+            if score_threshold is not None and gain / initial_best < score_threshold:
+                break
+        selected.append(record)
+        covered[ys, xs] = True
+        remaining.remove(record)
+
+    selected = _fill_to_limit(selected, records, min_k) if len(selected) < min_k else selected
+    return sorted(selected, key=lambda item: int(item["tile_id"]))
 
 
 def select_records_oracle_greedy(records: list[dict], top_k: int) -> list[dict]:

@@ -32,7 +32,7 @@ from detector import (  # noqa: E402
     tile_to_original_crop,
 )
 from heatmap_scout import (  # noqa: E402
-    live_heatmap_scores,
+    live_heatmap_outputs,
     load_live_checkpoint as load_heatmap_checkpoint,
 )
 from preprocess import (  # noqa: E402
@@ -42,8 +42,11 @@ from preprocess import (  # noqa: E402
     selected_area_fraction,
 )
 from routing import (  # noqa: E402
+    coverage_stats,
     heuristic_scores,
+    pairwise_overlap_stats,
     prior_from_records,
+    select_records_by_heatmap_coverage,
     select_records_by_scores,
     select_records_oracle_greedy,
 )
@@ -57,7 +60,7 @@ from scout import (  # noqa: E402
 )
 from xnor_heatmap_scout import (  # noqa: E402
     LITE_SCOUT_IMAGE_SIZE,
-    live_xnor_heatmap_scores,
+    live_xnor_heatmap_outputs,
     load_xnor_live_checkpoint,
 )
 
@@ -82,6 +85,8 @@ LIVE_SCOUT_PHASES = [
     "total",
     "total_with_resize",
 ]
+
+HEATMAP_POLICIES = {"heatmap-coverage", "adaptive-heatmap-coverage"}
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -321,8 +326,16 @@ def select_tile_records(
     rng: random.Random,
     scout_scores: dict[tuple[str, int], float] | None,
     tile_scores: dict[int, float] | None = None,
+    heatmap_logits: np.ndarray | None = None,
 ) -> list[dict]:
     records = sorted(records, key=lambda item: int(item["tile_id"]))
+    policy = getattr(args, "selection_policy", "topk")
+    max_k = getattr(args, "max_k", 0) or None
+    min_k = getattr(args, "min_k", 1)
+    tile_nms_iou = getattr(args, "tile_nms_iou", 0.3)
+    mmr_lambda = getattr(args, "mmr_lambda", 0.75)
+    score_threshold = getattr(args, "score_threshold", None)
+    mass_threshold = getattr(args, "mass_threshold", None)
     if args.selector == "all":
         return records
     if args.top_k < 1:
@@ -340,11 +353,31 @@ def select_tile_records(
     if args.selector == "oracle-greedy":
         return select_records_oracle_greedy(records, args.top_k)
     if args.selector == "prior":
-        return select_records_by_scores(records, args.prior_scores, args.top_k)
+        return select_records_by_scores(
+            records,
+            args.prior_scores,
+            args.top_k,
+            policy=policy,
+            min_k=min_k,
+            max_k=max_k,
+            tile_nms_iou=tile_nms_iou,
+            mmr_lambda=mmr_lambda,
+            score_threshold=score_threshold,
+        )
     if args.selector == "heuristic":
         if tile_scores is None:
             raise ValueError("--selector heuristic requires live tile scores")
-        return select_records_by_scores(records, tile_scores, args.top_k)
+        return select_records_by_scores(
+            records,
+            tile_scores,
+            args.top_k,
+            policy=policy,
+            min_k=min_k,
+            max_k=max_k,
+            tile_nms_iou=tile_nms_iou,
+            mmr_lambda=mmr_lambda,
+            score_threshold=score_threshold,
+        )
     if args.selector == "scout" or is_live_scout_selector(args.selector):
         if scout_scores is None:
             raise ValueError(f"--selector {args.selector} requires scout scores")
@@ -355,12 +388,53 @@ def select_tile_records(
         ]
         if missing:
             raise ValueError(f"scout scores missing for {stem} tile_ids={missing[:5]}")
-        ranked = sorted(
+        by_tile = {int(record["tile_id"]): scout_scores[(stem, int(record["tile_id"]))] for record in records}
+        if policy in HEATMAP_POLICIES:
+            if heatmap_logits is None:
+                raise ValueError(f"--selection-policy {policy} requires a heatmap scout selector")
+            return select_records_by_heatmap_coverage(
+                records,
+                heatmap_logits,
+                args.top_k,
+                policy=policy,
+                min_k=min_k,
+                max_k=max_k,
+                mass_threshold=mass_threshold,
+                score_threshold=score_threshold,
+            )
+        return select_records_by_scores(
             records,
-            key=lambda item: (-scout_scores[(stem, int(item["tile_id"]))], int(item["tile_id"])),
+            by_tile,
+            args.top_k,
+            policy=policy,
+            min_k=min_k,
+            max_k=max_k,
+            tile_nms_iou=tile_nms_iou,
+            mmr_lambda=mmr_lambda,
+            score_threshold=score_threshold,
         )
-        return sorted(ranked[: args.top_k], key=lambda item: int(item["tile_id"]))
     raise ValueError(f"unsupported selector: {args.selector}")
+
+
+def selection_scores_by_tile(
+    stem: str,
+    records: list[dict],
+    args: argparse.Namespace,
+    scout_scores: dict[tuple[str, int], float] | None,
+    tile_scores: dict[int, float] | None,
+) -> dict[int, float]:
+    if scout_scores:
+        return {
+            int(record["tile_id"]): float(scout_scores.get((stem, int(record["tile_id"])), 0.0))
+            for record in records
+        }
+    if tile_scores:
+        return {int(tile_id): float(score) for tile_id, score in tile_scores.items()}
+    if args.selector == "prior":
+        return {int(record["tile_id"]): float(args.prior_scores.get(int(record["tile_id"]), 0.0)) for record in records}
+    if args.selector in {"oracle", "oracle-count", "oracle-greedy"}:
+        return {int(record["tile_id"]): float(record.get("n_objects", 0)) for record in records}
+    return {}
 
 
 def predict_full(model, rgb: np.ndarray, args: argparse.Namespace, device) -> list[Detection]:
@@ -474,6 +548,8 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
     merge_nms_ms = 0.0
     live_scout_timing = empty_live_scout_timing()
     scout_route = None
+    heatmap_logits = None
+    tile_scores = None
 
     if args.selector == "full":
         selected_records: list[dict] = []
@@ -487,13 +563,13 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
     else:
         if is_live_scout_selector(args.selector):
             if is_xnor_heatmap_selector(args.selector):
-                scout_scores, live_scout_timing, scout_route = live_xnor_heatmap_scores(
+                scout_scores, heatmap_logits, live_scout_timing, scout_route = live_xnor_heatmap_outputs(
                     rgb,
                     records,
                     args.scout_checkpoint,
                 )
             elif is_heatmap_selector(args.selector):
-                scout_scores, live_scout_timing, scout_route = live_heatmap_scores(
+                scout_scores, heatmap_logits, live_scout_timing, scout_route = live_heatmap_outputs(
                     rgb,
                     records,
                     args.scout_checkpoint,
@@ -519,10 +595,10 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
             tile_scores = {
                 tile.tile_id: float(score)
                 for tile, score in zip(tiles_for_scores, scores)
-            }
+                }
             scout_ms = (time.perf_counter() - scout_started) * 1000.0
         select_started = time.perf_counter()
-        selected_records = select_tile_records(stem, records, args, rng, scout_scores, tile_scores)
+        selected_records = select_tile_records(stem, records, args, rng, scout_scores, tile_scores, heatmap_logits)
         if is_live_scout_selector(args.selector):
             live_scout_timing["scout_topk_ms"] = (time.perf_counter() - select_started) * 1000.0
             scout_ms = timing_total(live_scout_timing)
@@ -538,6 +614,16 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
         )
         detector_calls = len(selected_tiles)
         area_fraction = selected_area_fraction(selected_tiles, img_size=args.img_size)
+
+    score_by_tile = selection_scores_by_tile(stem, records, args, scout_scores, tile_scores)
+    selected_score_rows = [
+        {"tile_id": int(record["tile_id"]), "score": float(score_by_tile.get(int(record["tile_id"]), 0.0))}
+        for record in selected_records
+    ]
+    routing_stats = {}
+    if args.selector != "full":
+        routing_stats.update(pairwise_overlap_stats(selected_records))
+        routing_stats.update(coverage_stats(records, selected_records))
 
     match_started = time.perf_counter()
     recall = match_recall(
@@ -558,8 +644,12 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
         "seed": args.seed,
         "crop_source": args.crop_source,
         "top_k": None if args.selector in {"full", "all"} else args.top_k,
+        "selection_policy": None if args.selector in {"full", "all"} else args.selection_policy,
+        "min_k": None if args.selector in {"full", "all"} else args.min_k,
+        "max_k": None if args.selector in {"full", "all"} else (args.max_k or args.top_k),
         "selected_tiles": len(selected_tiles),
         "selected_tile_ids": [tile.tile_id for tile in selected_tiles],
+        "selected_tile_scores": selected_score_rows,
         "selected_area_fraction": area_fraction,
         "detector_calls": detector_calls,
         "detections": len(detections),
@@ -576,6 +666,7 @@ def run_one_image(model, stem: str, records: list[dict], args: argparse.Namespac
         "load_ms": image_load_ms + resize_preprocess_ms + gt_parse_ms,
         "merge_ms": merge_nms_ms,
         **recall,
+        **routing_stats,
         **live_scout_timing,
     }
     if is_live_scout_selector(args.selector):
@@ -658,8 +749,16 @@ def summarize(rows: list[dict], args: argparse.Namespace) -> dict:
         "mean_detections": float(np.mean([row["detections"] for row in rows])) if rows else 0.0,
         "mean_detector_calls": float(np.mean([row["detector_calls"] for row in rows])) if rows else 0.0,
         "mean_selected_tiles": float(np.mean([row["selected_tiles"] for row in rows])) if rows else 0.0,
+        "p50_selected_tiles": percentile([row["selected_tiles"] for row in rows], 50),
+        "p95_selected_tiles": percentile([row["selected_tiles"] for row in rows], 95),
         "mean_selected_area_fraction": (
             float(np.mean([row["selected_area_fraction"] for row in rows])) if rows else 0.0
+        ),
+        "mean_gt_object_coverage": (
+            float(np.mean([row.get("gt_object_coverage", 0.0) for row in rows])) if rows else 0.0
+        ),
+        "mean_duplicate_coverage_count": (
+            float(np.mean([row.get("duplicate_coverage_count", 0.0) for row in rows])) if rows else 0.0
         ),
         "latency_ms": summarize_ms(rows, "latency_ms"),
         "phase_ms": {name: summarize_ms(rows, name) for name in phase_names},
@@ -693,6 +792,24 @@ def parse_args() -> argparse.Namespace:
         default="full",
     )
     parser.add_argument("--top-k", type=int, default=8)
+    parser.add_argument(
+        "--selection-policy",
+        choices=[
+            "topk",
+            "tile-nms",
+            "mmr",
+            "heatmap-coverage",
+            "adaptive-mmr",
+            "adaptive-heatmap-coverage",
+        ],
+        default="topk",
+    )
+    parser.add_argument("--min-k", type=int, default=1)
+    parser.add_argument("--max-k", type=int, default=0, help="0 means use --top-k")
+    parser.add_argument("--tile-nms-iou", type=float, default=0.3)
+    parser.add_argument("--mmr-lambda", type=float, default=0.75)
+    parser.add_argument("--score-threshold", type=float, default=None)
+    parser.add_argument("--mass-threshold", type=float, default=None)
     parser.add_argument("--max-images", type=int, default=5, help="0 means all images")
     parser.add_argument("--weights", default="yolov8n.pt")
     parser.add_argument("--img-size", type=int, default=640)
@@ -730,6 +847,16 @@ def main() -> int:
         groups = grouped_by_stem(records, args.max_images)
         if not groups:
             raise ValueError("no images selected")
+        if args.min_k < 1:
+            raise ValueError("--min-k must be positive")
+        if args.max_k < 0:
+            raise ValueError("--max-k must be nonnegative")
+        if not 0.0 <= args.tile_nms_iou <= 1.0:
+            raise ValueError("--tile-nms-iou must be in [0, 1]")
+        if not 0.0 <= args.mmr_lambda <= 1.0:
+            raise ValueError("--mmr-lambda must be in [0, 1]")
+        if args.selection_policy in HEATMAP_POLICIES and not is_heatmap_selector(args.selector):
+            raise ValueError(f"--selection-policy {args.selection_policy} requires a heatmap selector")
 
         scout_scores = None
         if args.selector == "scout":
@@ -768,6 +895,13 @@ def main() -> int:
                 "weights": args.weights,
                 "split": args.split,
                 "selector": args.selector,
+                "selection_policy": args.selection_policy,
+                "min_k": args.min_k,
+                "max_k": args.max_k or args.top_k,
+                "tile_nms_iou": args.tile_nms_iou,
+                "mmr_lambda": args.mmr_lambda,
+                "score_threshold": args.score_threshold,
+                "mass_threshold": args.mass_threshold,
                 "crop_source": args.crop_source,
                 "top_k": args.top_k,
                 "max_images": args.max_images,
@@ -800,7 +934,8 @@ def main() -> int:
             limit = f"_n{args.max_images}" if args.max_images else ""
             topk = f"_k{args.top_k}" if args.selector not in {"full", "all"} else ""
             crop = "_original" if args.crop_source == "original" else ""
-            out = ROOT / "data" / f"results_yolo_{args.selector}{topk}{crop}_{args.split}{limit}.json"
+            policy = "" if args.selection_policy == "topk" or args.selector in {"full", "all"} else f"_{args.selection_policy}"
+            out = ROOT / "data" / f"results_yolo_{args.selector}{topk}{policy}{crop}_{args.split}{limit}.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(result, indent=2) + "\n")
 

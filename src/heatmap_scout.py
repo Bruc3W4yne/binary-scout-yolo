@@ -323,12 +323,12 @@ def load_live_checkpoint(path: Path, device: torch.device | str = "cpu") -> dict
 
 
 @torch.no_grad()
-def live_heatmap_scores(
+def live_heatmap_outputs(
     rgb: np.ndarray,
     records: list[dict],
     checkpoint: dict,
     device: torch.device | str = "cpu",
-) -> tuple[dict[tuple[str, int], float], dict[str, float], str]:
+) -> tuple[dict[tuple[str, int], float], np.ndarray, dict[str, float], str]:
     tiles = [Tile(**{k: int(v) for k, v in record_tile(record).items()}) for record in sorted(records, key=lambda item: int(item["tile_id"]))]
     model = checkpoint["model"].to(device).eval()
     timing: dict[str, float] = {}
@@ -347,11 +347,28 @@ def live_heatmap_scores(
     timing["scout_heatmap_model_ms"] = (time.perf_counter() - started) * 1000.0
 
     started = time.perf_counter()
-    scores = tile_logits_from_heatmap(logits.cpu(), tiles).squeeze(0).numpy()
+    logits_cpu = logits.cpu()
+    scores = tile_logits_from_heatmap(logits_cpu, tiles).squeeze(0).numpy()
     timing["scout_heatmap_tile_score_ms"] = (time.perf_counter() - started) * 1000.0
 
     stem = records[0]["stem"]
-    return {(stem, tile.tile_id): float(score) for tile, score in zip(tiles, scores)}, timing, str(checkpoint["route"])
+    return (
+        {(stem, tile.tile_id): float(score) for tile, score in zip(tiles, scores)},
+        logits_cpu.numpy(),
+        timing,
+        str(checkpoint["route"]),
+    )
+
+
+@torch.no_grad()
+def live_heatmap_scores(
+    rgb: np.ndarray,
+    records: list[dict],
+    checkpoint: dict,
+    device: torch.device | str = "cpu",
+) -> tuple[dict[tuple[str, int], float], dict[str, float], str]:
+    scores, _logits, timing, route = live_heatmap_outputs(rgb, records, checkpoint, device)
+    return scores, timing, route
 
 
 def write_export(model: HeatmapScout, out_path: Path) -> None:

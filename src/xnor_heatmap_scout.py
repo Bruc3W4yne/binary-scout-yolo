@@ -155,6 +155,15 @@ def live_xnor_heatmap_scores(
     records: list[dict],
     checkpoint: dict,
 ) -> tuple[dict[tuple[str, int], float], dict[str, float], str]:
+    scores, _logits, timing, route = live_xnor_heatmap_outputs(rgb, records, checkpoint)
+    return scores, timing, route
+
+
+def live_xnor_heatmap_outputs(
+    rgb: np.ndarray,
+    records: list[dict],
+    checkpoint: dict,
+) -> tuple[dict[tuple[str, int], float], np.ndarray, dict[str, float], str]:
     tiles = [Tile(**{k: int(v) for k, v in record_tile(record).items()}) for record in sorted(records, key=lambda item: int(item["tile_id"]))]
     timing: dict[str, float] = {}
     source_image_size = int(records[0].get("img_size", rgb.shape[0]))
@@ -176,4 +185,9 @@ def live_xnor_heatmap_scores(
     timing["scout_heatmap_tile_score_ms"] = (time.perf_counter() - started) * 1000.0
 
     stem = records[0]["stem"]
-    return {(stem, tile.tile_id): float(score) for tile, score in zip(tiles, scores)}, timing, str(checkpoint["route"])
+    return (
+        {(stem, tile.tile_id): float(score) for tile, score in zip(tiles, scores)},
+        logits,
+        timing,
+        str(checkpoint["route"]),
+    )
